@@ -1,4 +1,4 @@
-﻿# 馃 SekaiForm 路 琛ㄥ崟涓?AI 瀵硅瘽绯荤粺
+# 馃 SekaiForm 路 琛ㄥ崟涓?AI 瀵硅瘽绯荤粺
 
 > **Spring Boot + Thymeleaf + MyBatis 琛ㄥ崟绯荤粺 路 鎰忓浘璇嗗埆 路 宸ュ叿璋冪敤 路 Live2D 瑙掕壊**
 > Form system with intent recognition, tool calling, and Live2D characters
@@ -16,7 +16,7 @@ A form & AI dialogue system built with **Spring Boot + Thymeleaf + MyBatis**: co
 鍩轰簬 **Spring Boot + Thymeleaf + MyBatis** 鐨勮〃鍗曚笌 AI 瀵硅瘽绯荤粺锛氭敹闆嗙敤鎴疯〃鍗曟暟鎹€佹剰鍥捐瘑鍒笌宸ュ叿璋冪敤锛屾敮鎸?Live2D 瑙掕壊灞曠ず銆?
 
 <p align="center">
-  <img src="screenshots/demo.gif" alt="Demo" width="720"/>
+  <img src="screenshots/demo.webp" alt="Demo" width="720"/>
 </p>
 ---
 
