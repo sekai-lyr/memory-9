@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sekai.sekai_form.mapper.SekaiFormInteractionLogMapper">
+    <select id="listByCharacterId" resultType="com.sekai.sekai_form.dataobject.SekaiFormInteractionLogDO">
+        SELECT * FROM sekai_form_interaction_log WHERE character_id = #{characterId} ORDER BY create_time DESC
+    </select>
+    <insert id="insert" parameterType="com.sekai.sekai_form.dataobject.SekaiFormInteractionLogDO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sekai_form_interaction_log(character_id, interaction_type, description, create_time)
+        VALUES (#{characterId}, #{interactionType}, #{description}, NOW())
+    </insert>
+</mapper>

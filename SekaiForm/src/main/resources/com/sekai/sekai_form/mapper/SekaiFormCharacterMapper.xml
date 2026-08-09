@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sekai.sekai_form.mapper.SekaiFormCharacterMapper">
+    <select id="listByUserId" resultType="com.sekai.sekai_form.dataobject.SekaiFormCharacterDO">
+        SELECT * FROM sekai_form_character WHERE user_id = #{userId} ORDER BY id
+    </select>
+    <select id="findById" resultType="com.sekai.sekai_form.dataobject.SekaiFormCharacterDO">
+        SELECT * FROM sekai_form_character WHERE id = #{id} LIMIT 1
+    </select>
+    <insert id="insert" parameterType="com.sekai.sekai_form.dataobject.SekaiFormCharacterDO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sekai_form_character(user_id, name, description, model_type, model_path,
+        satiety, mood, affection, level, exp, free_points, hp, atk, def, create_time, update_time)
+        VALUES (#{userId}, #{name}, #{description}, #{modelType}, #{modelPath},
+        #{satiety}, #{mood}, #{affection}, #{level}, #{exp}, #{freePoints}, #{hp}, #{atk}, #{def}, NOW(), NOW())
+    </insert>
+    <update id="update" parameterType="com.sekai.sekai_form.dataobject.SekaiFormCharacterDO">
+        UPDATE sekai_form_character SET name=#{name}, description=#{description}, model_type=#{modelType},
+        model_path=#{modelPath}, satiety=#{satiety}, mood=#{mood}, affection=#{affection},
+        level=#{level}, exp=#{exp}, free_points=#{freePoints}, hp=#{hp}, atk=#{atk}, def=#{def},
+        update_time=NOW() WHERE id=#{id}
+    </update>
+    <delete id="deleteById">DELETE FROM sekai_form_character WHERE id=#{id}</delete>
+</mapper>

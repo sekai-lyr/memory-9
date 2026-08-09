@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SekaiForm - 3D Viewer</title>
+<link rel="stylesheet" href="/css/app.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:#0a0a1a}
+canvas{display:block}
+#status{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;z-index:30;pointer-events:none}
+#status .spinner{width:48px;height:48px;border:3px solid rgba(255,107,157,0.2);border-top-color:#ff6b9d;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#status .msg{font-size:1em;color:#e8e0f0}
+#status .detail{font-size:0.7em;color:#666;margin-top:6px;max-width:420px;word-break:break-all}
+#panel{position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,30,0.93);backdrop-filter:blur(20px);border-top:1px solid rgba(255,107,157,0.25);padding:14px 24px;display:none;align-items:center;gap:20px;flex-wrap:wrap;z-index:10}
+#panel h2{font-size:1.3em;font-weight:900;background:linear-gradient(135deg,#ff6b9d,#c44dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0}
+#panel .stats{display:flex;gap:18px;flex-wrap:wrap}
+#panel .st{text-align:center}
+#panel .st .v{font-size:1.2em;font-weight:800;color:#ff6b9d}
+#panel .st .l{font-size:0.62em;color:#8a80a0;text-transform:uppercase}
+.lv-badge{background:linear-gradient(135deg,#ffd700,#ffaa00);color:#000;padding:4px 12px;border-radius:20px;font-weight:900;font-size:0.85em}
+#top{position:fixed;top:0;left:0;right:0;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;z-index:10;pointer-events:none}
+#top>*{pointer-events:auto}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 18px;border:none;border-radius:8px;cursor:pointer;font-size:0.82em;font-weight:600;text-decoration:none;transition:all 0.2s}
+.btn-p{background:linear-gradient(135deg,#ff6b9d,#c44dff);color:#fff}
+.btn-o{background:transparent;border:1.5px solid #ff6b9d;color:#ff6b9d}
+.tst{position:fixed;top:14px;right:14px;padding:10px 20px;border-radius:10px;font-weight:700;z-index:999;color:#fff;animation:fadeIn 0.25s}
+.tst-ok{background:rgba(76,175,80,0.9)}.tst-err{background:rgba(244,67,54,0.9)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="status"><div class="spinner"></div><div class="msg">Starting 3D engine...</div><div class="detail" id="detail"></div></div>
+<div id="panel">
+    <h2 id="cName">...</h2>
+    <span class="lv-badge" id="cLv">Lv.1</span>
+    <div class="stats">
+        <div class="st"><div class="v" id="vSat">50</div><div class="l">Satiety</div></div>
+        <div class="st"><div class="v" id="vMood">50</div><div class="l">Mood</div></div>
+        <div class="st"><div class="v" id="vHeart">0</div><div class="l">Heart</div></div>
+        <div class="st"><div class="v" id="vExp">0</div><div class="l">EXP</div></div>
+    </div>
+    <span style="color:#8a80a0;font-size:0.72em;flex:1;text-align:right" id="cDesc"></span>
+</div>
+<div id="top">
+    <a href="/" class="btn btn-o">Back</a>
+    <div class="btns">
+        <button class="btn btn-p" id="btnFeed">Feed</button>
+        <button class="btn btn-o" id="btnPlay">Play</button>
+        <button class="btn btn-o" id="btnRest">Rest</button>
+        <button class="btn btn-o" id="btnReset">Reset View</button>
+    </div>
+</div>
+<div id="toasts"></div>
+
+<script src="/js/three.min.js"></script>
+<script src="/js/OrbitControls.js"></script>
+<script src="/js/GLTFLoader.js"></script>
+<script>
+var charId = window.location.pathname.split('/').filter(Boolean).pop();
+var scene, camera, renderer, controls, currentModel, mixer, clock = new THREE.Clock();
+var charData = null, allFoods = [], modelUrl = '';
+
+function stat(msg, detail) {
+    document.querySelector('#status .msg').textContent = msg;
+    document.getElementById('detail').textContent = detail || '';
+}
+
+async function loadChar() {
+    stat('Loading character...', '');
+    try {
+        var r = await fetch('/api/character/' + charId);
+        var j = await r.json();
+        if (j.success) {
+            charData = j.data;
+            document.getElementById('cName').textContent = charData.name;
+            document.getElementById('cDesc').textContent = charData.description || '';
+            document.getElementById('cLv').textContent = 'Lv.' + (charData.level || 1);
+            modelUrl = charData.modelPath || '';
+            updateStats();
+            document.getElementById('panel').style.display = 'flex';
+            stat('Character: ' + charData.name, 'Model path: ' + modelUrl);
+            return true;
+        }
+        stat('Character not found', '');
+        return false;
+    } catch (e) {
+        stat('Network error', 'Cannot reach server');
+        return false;
+    }
+}
+
+function updateStats() {
+    if (!charData) return;
+    document.getElementById('vSat').textContent = charData.satiety || 0;
+    document.getElementById('vMood').textContent = charData.mood || 0;
+    document.getElementById('vHeart').textContent = charData.affection || 0;
+    document.getElementById('vExp').textContent = charData.experience || 0;
+    document.getElementById('cLv').textContent = 'Lv.' + (charData.level || 1);
+}
+
+function initScene() {
+    stat('Starting WebGL...', '');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a1a);
+
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.4, 4);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.3;
+    document.body.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 0.5;
+    controls.maxDistance = 10;
+    controls.maxPolarAngle = Math.PI * 0.8;
+    controls.update();
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0x606080, 3));
+    var key = new THREE.DirectionalLight(0xffeedd, 7);
+    key.position.set(3, 4, 3);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    scene.add(key);
+    var fill = new THREE.DirectionalLight(0x8899ff, 4);
+    fill.position.set(-2, 1, -1);
+    scene.add(fill);
+    var rim = new THREE.DirectionalLight(0xff88aa, 5);
+    rim.position.set(0, 1, -3);
+    scene.add(rim);
+    var bot = new THREE.DirectionalLight(0x554488, 2);
+    bot.position.set(0, -1, 1);
+    scene.add(bot);
+
+    // Floor
+    var grid = new THREE.GridHelper(8, 24, 0x444466, 0x222244);
+    scene.add(grid);
+
+    // Platform ring
+    var ringGeo = new THREE.TorusGeometry(0.85, 0.04, 16, 80);
+    var ringMat = new THREE.MeshStandardMaterial({ color: 0xff6b9d, emissive: 0xff2060, emissiveIntensity: 1.2, roughness: 0.2, metalness: 0.4 });
+    var ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.05;
+    ring.receiveShadow = true;
+    scene.add(ring);
+
+    // Shadow disc
+    var discGeo = new THREE.CircleGeometry(0.9, 32);
+    var discMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 });
+    var disc = new THREE.Mesh(discGeo, discMat);
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.01;
+    scene.add(disc);
+
+    // Particles
+    var pGeo = new THREE.BufferGeometry();
+    var count = 500, pos = new Float32Array(count * 3);
+    for (var i = 0; i < count * 3; i += 3) {
+        pos[i] = (Math.random() - 0.5) * 14;
+        pos[i + 1] = Math.random() * 8;
+        pos[i + 2] = (Math.random() - 0.5) * 14;
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0xff6b9d, size: 0.03, transparent: true, opacity: 0.5 })));
+
+    // Placeholder - glowing sphere so user immediately sees SOMETHING
+    var sphGeo = new THREE.SphereGeometry(0.3, 32, 32);
+    var sphMat = new THREE.MeshStandardMaterial({ color: 0xff6b9d, emissive: 0xff3060, emissiveIntensity: 0.6, roughness: 0.3, metalness: 0.2 });
+    currentModel = new THREE.Mesh(sphGeo, sphMat);
+    currentModel.position.y = 1.1;
+    currentModel.castShadow = true;
+    currentModel.name = 'placeholder';
+    scene.add(currentModel);
+
+    stat('Scene ready', 'Loading model file...');
+}
+
+
+// === VRM preprocessor: strips VRM extensions from GLB for GLTFLoader ===
+function stripVRM(buffer) {
+    try {
+        var view = new DataView(buffer);
+        if (view.getUint32(0, true) !== 0x46546C67) return buffer;
+        var jsonLen = view.getUint32(12, true);
+        var jsonStart = 20;
+        if (jsonStart + jsonLen > buffer.byteLength) return buffer;
+        var jsonBytes = new Uint8Array(buffer, jsonStart, jsonLen);
+        var json = JSON.parse(new TextDecoder().decode(jsonBytes));
+        var changed = false;
+        if (json.extensionsUsed) {
+            var f = json.extensionsUsed.filter(function(e) { return e !== 'VRM' && e !== 'VRMC_vrm'; });
+            if (f.length !== json.extensionsUsed.length) { changed = true; json.extensionsUsed = f; }
+            if (!json.extensionsUsed.length) delete json.extensionsUsed;
+        }
+        if (json.extensionsRequired) {
+            var f = json.extensionsRequired.filter(function(e) { return e !== 'VRM' && e !== 'VRMC_vrm'; });
+            if (f.length !== json.extensionsRequired.length) { changed = true; json.extensionsRequired = f; }
+            if (!json.extensionsRequired.length) delete json.extensionsRequired;
+        }
+        if (json.extensions) {
+            if (json.extensions.VRM) { delete json.extensions.VRM; changed = true; }
+            if (json.extensions.VRMC_vrm) { delete json.extensions.VRMC_vrm; changed = true; }
+            if (!Object.keys(json.extensions).length) delete json.extensions;
+        }
+        if (!changed) return buffer;
+        var cleaned = JSON.stringify(json);
+        if (cleaned.length < jsonLen) { while (cleaned.length < jsonLen) cleaned += ' '; }
+        else { cleaned = cleaned.substring(0, jsonLen); }
+        var out = new Uint8Array(buffer.byteLength);
+        out.set(new Uint8Array(buffer, 0, jsonStart));
+        out.set(new TextEncoder().encode(cleaned), jsonStart);
+        var restStart = jsonStart + jsonLen;
+        out.set(new Uint8Array(buffer, restStart, buffer.byteLength - restStart), restStart);
+        return out.buffer;
+    } catch(e) { return buffer; }
+}
+function loadModel(url) {
+    if (!url) {
+        stat('No model path', 'This character has no 3D model assigned');
+        document.querySelector('#status .spinner').style.display = 'none';
+        return;
+    }
+
+    stat('Fetching model: ' + url.split('/').pop(), url);
+
+    // Fetch as ArrayBuffer, strip VRM, then parse
+    fetch(url).then(function(resp) {
+        if (!resp.ok) {
+            stat('Model file not found', 'HTTP ' + resp.status + ': ' + url);
+            document.querySelector('#status .spinner').style.display = 'none';
+            throw new Error('HTTP ' + resp.status);
+        }
+        var sizeKB = Math.round(parseInt(resp.headers.get('Content-Length') || 0) / 1024);
+        stat('Model OK (' + sizeKB + ' KB)', 'Processing...');
+        return resp.arrayBuffer();
+    }).then(function(buffer) {
+        if (/\.vrm$/i.test(url)) {
+            stat('Stripping VRM extensions...', url);
+            buffer = stripVRM(buffer);
+        }
+
+        stat('Rendering with GLTFLoader...', '');
+
+        // Remove old model
+        if (currentModel) {
+            scene.remove(currentModel);
+            if (currentModel.geometry) currentModel.geometry.dispose();
+            if (currentModel.material) {
+                if (Array.isArray(currentModel.material)) {
+                    currentModel.material.forEach(function(m) { m.dispose(); });
+                } else {
+                    currentModel.material.dispose();
+                }
+            }
+        }
+        if (mixer) { mixer.stopAllAction(); mixer = null; }
+
+        var loader = new THREE.GLTFLoader();
+        loader.parse(buffer, '', function(gltf) {
+            currentModel = gltf.scene;
+
+            // Calculate bounding box and scale
+            var box = new THREE.Box3().setFromObject(currentModel);
+            var size = box.getSize(new THREE.Vector3());
+            var center = box.getCenter(new THREE.Vector3());
+            var maxDim = Math.max(size.x, size.y, size.z);
+
+            if (maxDim > 0.001) {
+                var scale = 2.0 / maxDim;
+                currentModel.scale.setScalar(scale);
+                currentModel.position.set(-center.x * scale, -center.y * scale + 1.0, -center.z * scale);
+            } else {
+                currentModel.position.set(0, 1, 0);
+            }
+
+            // Enable shadows
+            currentModel.traverse(function(child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            scene.add(currentModel);
+
+            // Animations
+            if (gltf.animations && gltf.animations.length > 0) {
+                mixer = new THREE.AnimationMixer(currentModel);
+                var action = mixer.clipAction(gltf.animations[0]);
+                action.play();
+                console.log('Playing animation: ' + gltf.animations[0].name);
+            }
+
+            controls.target.set(0, 1, 0);
+            document.getElementById('status').style.display = 'none';
+            console.log('Model loaded successfully: ' + url);
+        }, function(err) {
+            stat('GLTFLoader failed', (err.message || 'Unknown error'));
+            document.querySelector('#status .spinner').style.display = 'none';
+            showToast('Model render failed', 'err');
+            console.error('GLTFLoader error:', err, url);
+        });
+    }).catch(function(err) {
+        stat('Cannot reach model file', err.message);
+        document.querySelector('#status .spinner').style.display = 'none';
+        showToast('Model file unreachable', 'err');
+        console.error('Fetch error:', err);
+    });
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.1);
+    if (mixer) mixer.update(dt);
+    controls.update();
+    scene.children.forEach(function(c) {
+        if (c.isPoints) c.rotation.y += dt * 0.08;
+        if (c.isMesh && c.geometry && c.geometry.type === 'TorusGeometry') c.rotation.z += dt * 0.4;
+    });
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', function() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Buttons
+document.getElementById('btnFeed').onclick = async function() {
+    if (!charData) return;
+    try {
+        var r = await fetch('/api/interaction/foods');
+        var j = await r.json();
+        if (!j.success || !j.data.length) { showToast('No foods', 'err'); return; }
+        r = await fetch('/api/interaction/feed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ characterId: charData.id, foodId: j.data[0].id }) });
+        j = await r.json();
+        if (j.success) {
+            charData.satiety = Math.min(100, (charData.satiety || 0) + (j.data.satietyChange || 0));
+            charData.mood = Math.min(100, (charData.mood || 0) + (j.data.moodChange || 0));
+            charData.affection = Math.min(100, (charData.affection || 0) + (j.data.affectionChange || 0));
+            charData.experience = (charData.experience || 0) + (j.data.experienceChange || 0);
+            if (charData.experience >= charData.level * 100) { charData.level++; charData.experience = 0; }
+            updateStats(); showToast('Fed!', 'ok');
+        } else showToast(j.message, 'err');
+    } catch (e) { showToast('Error', 'err'); }
+};
+document.getElementById('btnPlay').onclick = async function() {
+    if (!charData) return;
+    try {
+        var r = await fetch('/api/interaction/play/' + charData.id, { method: 'POST' });
+        var j = await r.json();
+        if (j.success) {
+            charData.mood = Math.min(100, (charData.mood || 0) + (j.data.moodChange || 0));
+            charData.affection = Math.min(100, (charData.affection || 0) + (j.data.affectionChange || 0));
+            charData.experience = (charData.experience || 0) + (j.data.experienceChange || 0);
+            if (charData.experience >= charData.level * 100) { charData.level++; charData.experience = 0; }
+            updateStats(); showToast('Played!', 'ok');
+        } else showToast(j.message, 'err');
+    } catch (e) { showToast('Error', 'err'); }
+};
+document.getElementById('btnRest').onclick = async function() {
+    if (!charData) return;
+    try {
+        var r = await fetch('/api/interaction/rest/' + charData.id, { method: 'POST' });
+        var j = await r.json();
+        if (j.success) {
+            charData.mood = Math.min(100, (charData.mood || 0) + (j.data.moodChange || 0));
+            updateStats(); showToast('Rested!', 'ok');
+        } else showToast(j.message, 'err');
+    } catch (e) { showToast('Error', 'err'); }
+};
+document.getElementById('btnReset').onclick = function() {
+    camera.position.set(0, 1.4, 4);
+    controls.target.set(0, 1, 0);
+    controls.update();
+    showToast('View reset', 'ok');
+};
+
+function showToast(msg, type) {
+    var t = document.createElement('div');
+    t.className = 'tst tst-' + (type === 'err' ? 'err' : 'ok');
+    t.textContent = msg;
+    document.getElementById('toasts').appendChild(t);
+    setTimeout(function() { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(function() { t.remove(); }, 300); }, 2200);
+}
+
+// === MAIN ===
+(async function() {
+    var ok = await loadChar();
+    initScene();
+    if (ok && modelUrl) {
+        loadModel(modelUrl);
+    } else if (!modelUrl) {
+        stat('No model path', 'Create a character with a model_path first');
+        document.querySelector('#status .spinner').style.display = 'none';
+    }
+    animate();
+})();
+</script>
+</body>
+</html>

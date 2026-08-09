@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>DivaStage - Diagnostic</title>
+<style>
+:root {
+    --accent3: #00e5c0; --accent2: #7c3aed; --accent: #ff3d7f;
+    --text: #d8dce8; --text-dim: #6b7280; --bg-deep: #02080f;
+}
+body { background: var(--bg-deep); color: var(--text); font-family: 'SF Mono','Cascadia Code','Consolas',monospace; margin: 24px; }
+body::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: -1;
+    background:
+        radial-gradient(ellipse at 25% 15%, rgba(124,58,237,0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 75% 85%, rgba(0,229,192,0.04) 0%, transparent 50%),
+        repeating-linear-gradient(0deg, rgba(0,229,192,0.01) 0px, rgba(0,229,192,0.01) 1px, transparent 1px, transparent 3px);
+}
+#log { white-space: pre-wrap; margin: 12px 0; font-size: 12px; max-height: calc(100vh - 220px); overflow-y: auto; line-height: 1.8; }
+canvas { border: 1.5px solid var(--accent3); display: block; box-shadow: 0 0 18px rgba(0,229,192,0.1); background: rgba(0,0,0,0.3); border-radius: 4px; }
+h2 {
+    background: linear-gradient(135deg, var(--accent3), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; letter-spacing: 1px; margin-bottom: 4px;
+}
+.ok { color: #28c840; } .fail { color: #ff5588; } .info { color: var(--accent3); }
+</style>
+</head>
+<body>
+<h2>&#9632; Live2D Diagnostic</h2>
+<p style="color:#6b7280;font-size:0.7em;margin:0 0 10px;letter-spacing:1px;text-transform:uppercase">NODE :: DIAG-MODE</p>
+<div id="log"></div>
+<canvas id="c" width="800" height="600"></canvas>
+
+<script src="/js/pixi.min.js"></script>
+<script src="/js/live2dcubismcore.min.js"></script>
+<script src="/js/pixi-live2d-display.min.js"></script>
+
+<script>
+var logEl = document.getElementById('log');
+function L(msg, cls) {
+    var s = cls ? '<span class="'+cls+'">'+msg+'</span>' : msg;
+    logEl.innerHTML += s + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+}
+L('=== Live2D Diagnostic ===');
+L('PixiJS: ' + (typeof PIXI !== 'undefined' ? 'OK v'+PIXI.VERSION : 'MISSING'),
+    typeof PIXI !== 'undefined' ? 'ok' : 'fail');
+L('Live2DCubismCore: ' + (typeof Live2DCubismCore !== 'undefined' ? 'OK' : 'MISSING'),
+    typeof Live2DCubismCore !== 'undefined' ? 'ok' : 'fail');
+L('PIXI.live2d: ' + (PIXI.live2d ? 'OK' : 'MISSING'),
+    PIXI.live2d ? 'ok' : 'fail');
+
+if (typeof Live2DCubismCore !== 'undefined') {
+    L('Core version: ' + Live2DCubismCore.Version.csmGetVersion(), 'info');
+    L('Latest moc version: ' + Live2DCubismCore.Version.csmGetLatestMocVersion(), 'info');
+}
+
+var app;
+try {
+    app = new PIXI.Application({
+        view: document.getElementById('c'),
+        width: 800, height: 600,
+        backgroundAlpha: 0, backgroundColor: 0x02080f,
+        antialias: true
+    });
+    L('PixiJS App: OK', 'ok');
+} catch(e) { L('PixiJS App: ' + e.message, 'fail'); }
+
+async function load() {
+    L('--- Loading model ---', 'info');
+
+    if (PIXI.live2d && PIXI.live2d.startUpCubism4) {
+        try {
+            L('Calling startUpCubism4...', 'info');
+            await PIXI.live2d.startUpCubism4(Live2DCubismCore);
+            L('startUpCubism4: OK', 'ok');
+        } catch(e) { L('startUpCubism4: ' + e.message, 'fail'); }
+    }
+
+    var url = '/live2d-models/haru/haru.model3.json';
+    L('Loading: ' + url, 'info');
+
+    try {
+        var resp = await fetch(url);
+        L('Fetch model3.json: ' + resp.status, resp.ok ? 'ok' : 'fail');
+        if (!resp.ok) return;
+
+        L('Creating Live2DModel...', 'info');
+        var model = await PIXI.live2d.Live2DModel.from(url);
+        L('Model created!', 'ok');
+
+        model.scale.set(0.15);
+        model.anchor.set(0.5, 0.5);
+        model.x = 400; model.y = 300;
+        app.stage.addChild(model);
+        L('Model added to stage!', 'ok');
+        L('SUCCESS! You should see Haru on the canvas above.', 'ok');
+
+    } catch(e) {
+        L('ERROR: ' + e.message, 'fail');
+        L('Stack: ' + (e.stack || 'none'), 'fail');
+    }
+}
+
+setTimeout(load, 500);
+</script>
+</body>
+</html>

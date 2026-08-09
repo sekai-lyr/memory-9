@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sekai.sekai_form.mapper.Live2DModelMapper">
+    <resultMap id="BaseResultMap" type="com.sekai.sekai_form.dataobject.Live2DModelDO">
+        <id column="id" property="id"/>
+        <result column="character_id" property="characterId"/>
+        <result column="model_name" property="modelName"/>
+        <result column="model_path" property="modelPath"/>
+        <result column="display_name" property="displayName"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+    <select id="listAll" resultMap="BaseResultMap">
+        SELECT * FROM live2d_model ORDER BY id
+    </select>
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM live2d_model WHERE id = #{id}
+    </select>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO live2d_model (character_id, model_name, model_path, display_name, create_time)
+        VALUES (#{characterId}, #{modelName}, #{modelPath}, #{displayName}, NOW())
+    </insert>
+    <update id="update">
+        UPDATE live2d_model SET character_id=#{characterId}, model_name=#{modelName},
+        model_path=#{modelPath}, display_name=#{displayName} WHERE id=#{id}
+    </update>
+    <delete id="deleteById">DELETE FROM live2d_model WHERE id=#{id}</delete>
+</mapper>
