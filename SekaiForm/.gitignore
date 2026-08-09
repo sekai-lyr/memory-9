@@ -1,0 +1,20 @@
+# Environment variables
+.env
+.env.local
+
+# Database files
+data/*.db
+data/*.mv.db
+data/*.trace.db
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Maven build
+target/
+
+# OS files
+.DS_Store
+Thumbs.db

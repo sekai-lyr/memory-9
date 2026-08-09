@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sekai.sekai_form.mapper.SekaiFormFoodMapper">
+    <select id="listAll" resultType="com.sekai.sekai_form.dataobject.SekaiFormFoodDO">
+        SELECT * FROM sekai_form_food
+    </select>
+    <select id="findById" resultType="com.sekai.sekai_form.dataobject.SekaiFormFoodDO">
+        SELECT * FROM sekai_form_food WHERE id = #{id}
+    </select>
+    <insert id="insert" parameterType="com.sekai.sekai_form.dataobject.SekaiFormFoodDO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sekai_form_food(name, description, satiety_value, mood_value, affection_value)
+        VALUES (#{name}, #{description}, #{satietyValue}, #{moodValue}, #{affectionValue})
+    </insert>
+    <delete id="deleteById">DELETE FROM sekai_form_food WHERE id = #{id}</delete>
+</mapper>

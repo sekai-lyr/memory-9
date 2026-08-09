@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sekai.sekai_form.mapper.Live2DDialogueMapper">
+    <resultMap id="BaseResultMap" type="com.sekai.sekai_form.dataobject.Live2DDialogueDO">
+        <id column="id" property="id"/>
+        <result column="model_id" property="modelId"/>
+        <result column="text" property="text"/>
+        <result column="category" property="category"/>
+        <result column="motion_name" property="motionName"/>
+        <result column="expression_name" property="expressionName"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+    <select id="listByModelId" resultMap="BaseResultMap">
+        SELECT * FROM live2d_dialogue WHERE model_id=#{modelId} ORDER BY category
+    </select>
+    <select id="listByCategory" resultMap="BaseResultMap">
+        SELECT * FROM live2d_dialogue WHERE model_id=#{param1} AND category=#{param2} ORDER BY id
+    </select>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO live2d_dialogue (model_id, text, category, motion_name, expression_name, create_time)
+        VALUES (#{modelId}, #{text}, #{category}, #{motionName}, #{expressionName}, NOW())
+    </insert>
+    <update id="update">
+        UPDATE live2d_dialogue SET text=#{text}, category=#{category}, motion_name=#{motionName},
+        expression_name=#{expressionName} WHERE id=#{id}
+    </update>
+    <delete id="deleteById">DELETE FROM live2d_dialogue WHERE id=#{id}</delete>
+</mapper>

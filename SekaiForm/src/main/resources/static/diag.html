@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>DivaStage - Diagnostic v5</title>
+<style>
+:root {
+    --accent3: #00e5c0; --accent2: #7c3aed;
+    --text: #d8dce8; --text-dim: #6b7280; --bg-deep: #02080f;
+}
+body { background: var(--bg-deep); color: var(--text); font-family: 'SF Mono','Cascadia Code','Consolas',monospace; margin: 24px; }
+body::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: -1;
+    background:
+        radial-gradient(ellipse at 75% 15%, rgba(0,229,192,0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 25% 85%, rgba(124,58,237,0.04) 0%, transparent 50%);
+}
+#log { white-space: pre-wrap; margin: 12px 0; font-size: 12px; max-height: 80vh; overflow-y: auto; line-height: 1.8; }
+canvas { border: 1.5px solid var(--accent3); display: block; box-shadow: 0 0 18px rgba(0,229,192,0.1); background: rgba(0,0,0,0.3); border-radius: 4px; }
+h2 {
+    background: linear-gradient(135deg, var(--accent3), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; letter-spacing: 1px; margin-bottom: 4px;
+}
+.ok { color: #28c840; } .fail { color: #ff5588; } .info { color: var(--accent3); }
+</style>
+</head>
+<body>
+<h2>&#9632; Live2D Diagnostic v5</h2>
+<p style="color:#6b7280;font-size:0.7em;margin:0 0 10px;letter-spacing:1px;text-transform:uppercase">NODE :: DIAG-STUB-MODE</p>
+<div id="log"></div>
+<canvas id="c" width="800" height="600"></canvas>
+
+<script src="/js/pixi.min.js"></script>
+<script src="/js/live2dcubismcore.min.js"></script>
+
+<script>
+var logEl = document.getElementById('log');
+function L(msg, cls) {
+    logEl.innerHTML += (cls ? '<span class="'+cls+'">'+msg+'</span>' : msg) + '\n';
+}
+
+window._errors = [];
+window.addEventListener('error', function(e) {
+    window._errors.push(e.message);
+    L('ERROR: ' + e.message, 'fail');
+});
+
+L('Stubbing Live2D...', 'info');
+window.Live2D = {
+    init: function(){},
+    getError: function(){ return null; },
+    setError: function(){},
+    ModelWebGL: { loadModel: function(){ throw new Error('C2'); } },
+    Utility: {}
+};
+L('Live2D stub done', 'ok');
+
+L('PIXI keys pre: ' + Object.keys(PIXI).filter(function(k){return k.length<10}).join(','), 'info');
+</script>
+
+<script src="/js/pixi-live2d-display.min.js"></script>
+
+<script>
+L('--- After load ---', 'info');
+L('Total errors captured: ' + window._errors.length, window._errors.length ? 'fail' : 'ok');
+L('PIXI.live2d keys: ' + Object.keys(PIXI.live2d).join(', '));
+L('Live2DModel: ' + (typeof PIXI.live2d.Live2DModel));
+
+if (typeof PIXI.live2d.Live2DModel !== 'undefined') {
+    var app = new PIXI.Application({
+        view: document.getElementById('c'),
+        width: 800, height: 600,
+        backgroundColor: 0x02080f, backgroundAlpha: 0, antialias: true
+    });
+    PIXI.live2d.Live2DModel.from('/live2d-models/haru/haru.model3.json').then(function(m) {
+        L('SUCCESS!', 'ok');
+        m.scale.set(0.15); m.anchor.set(0.5,0.5);
+        m.x=400; m.y=300; app.stage.addChild(m);
+    }).catch(function(e) { L('Model fail: '+e.message, 'fail'); });
+}
+</script>
+</body>
+</html>

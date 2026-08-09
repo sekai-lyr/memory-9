@@ -1,0 +1,31 @@
+# Environment
+.env
+.env.local
+
+# Database files
+data/*.db
+data/*.mv.db
+data/*.trace.db
+*.db
+*.sqlite
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Maven build
+target/
+*.class
+*.jar
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log

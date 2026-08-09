@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sekai.sekai_form.mapper.Live2DChatConfigMapper">
+    <resultMap id="BaseResultMap" type="com.sekai.sekai_form.dataobject.Live2DChatConfigDO">
+        <id column="id" property="id"/>
+        <result column="model_id" property="modelId"/>
+        <result column="api_url" property="apiUrl"/>
+        <result column="api_key" property="apiKey"/>
+        <result column="model_name" property="modelName"/>
+        <result column="image_model_name" property="imageModelName"/>
+        <result column="image_api_url" property="imageApiUrl"/>
+        <result column="system_prompt" property="systemPrompt"/>
+        <result column="max_tokens" property="maxTokens"/>
+        <result column="temperature" property="temperature"/>
+        <result column="enabled" property="enabled"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+    <select id="getByModelId" resultMap="BaseResultMap">
+        SELECT * FROM live2d_chat_config WHERE model_id=#{modelId} AND enabled=TRUE LIMIT 1
+    </select>
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO live2d_chat_config (model_id, api_url, api_key, model_name, image_model_name, image_api_url, system_prompt, max_tokens, temperature, enabled, create_time)
+        VALUES (#{modelId}, #{apiUrl}, #{apiKey}, #{modelName}, #{imageModelName}, #{imageApiUrl}, #{systemPrompt}, #{maxTokens}, #{temperature}, #{enabled}, NOW())
+    </insert>
+    <update id="update">
+        UPDATE live2d_chat_config SET api_url=#{apiUrl}, api_key=#{apiKey}, model_name=#{modelName},
+        image_model_name=#{imageModelName}, image_api_url=#{imageApiUrl},
+        system_prompt=#{systemPrompt}, max_tokens=#{maxTokens}, temperature=#{temperature}, enabled=#{enabled} WHERE id=#{id}
+    </update>
+</mapper>
