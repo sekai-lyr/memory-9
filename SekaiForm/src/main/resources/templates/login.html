@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DivaStage - Terminal Access</title>
+    <title>DivaStage | 登录</title>
     <link rel="stylesheet" href="/css/app.css">
     <style>
         body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
@@ -28,7 +28,7 @@
         .logo-hex {
             display: inline-block; width: 48px; height: 48px; position: relative; margin-bottom: 14px;
             border: 2px solid var(--accent3); border-radius: 4px;
-            box-shadow: 0 0 15px rgba(0,229,192,0.3), inset 0 0 10px rgba(0,229,192,0.08);
+            box-shadow: 0 14px 30px rgba(0,0,0,0.22), inset 0 0 0 2px rgba(241,154,132,0.08);
             animation: pulseSlow 3s ease-in-out infinite;
             transform: rotate(45deg);
         }
@@ -80,7 +80,7 @@
         }
         .form-group input:focus {
             border-color: var(--accent3);
-            box-shadow: 0 0 20px rgba(0,229,192,0.08), inset 0 0 12px rgba(0,229,192,0.03);
+            box-shadow: 0 0 0 2px rgba(241,154,132,0.12);
             background: rgba(0,229,192,0.03); outline: none;
         }
         .form-group .input-icon {
@@ -98,7 +98,7 @@
             color: var(--accent3); font-size: 0.95em; font-weight: 700; cursor: pointer;
             transition: all 0.3s; margin-top: 6px; letter-spacing: 2px;
             text-transform: uppercase; font-family: 'SF Mono', 'Cascadia Code', monospace;
-            box-shadow: 0 2px 15px rgba(0,229,192,0.08);
+            box-shadow: 0 10px 22px rgba(0,0,0,0.18);
             position: relative; overflow: hidden;
         }
         .login-btn::before {
@@ -109,7 +109,7 @@
         .login-btn:hover {
             background: linear-gradient(135deg, rgba(0,229,192,0.25), rgba(124,58,237,0.25));
             border-color: rgba(0,229,192,0.5);
-            box-shadow: 0 4px 25px rgba(0,229,192,0.2);
+            box-shadow: 0 14px 28px rgba(0,0,0,0.2);
             transform: translateY(-1px);
         }
         .login-btn:hover::before { left: 100%; }
@@ -134,8 +134,241 @@
         }
         .login-footer .blink { animation: pulseSlow 1.5s ease-in-out infinite; color: var(--accent3); }
     </style>
+    <style>
+        body.login-page {
+            position: relative;
+            display: grid;
+            place-items: center;
+            min-height: 100dvh;
+            overflow: hidden;
+            padding: 24px;
+            background:
+                linear-gradient(115deg, rgba(11, 7, 13, 0.92), rgba(11, 7, 13, 0.56)),
+                url('/img/sekai-stage.png') center / cover no-repeat;
+        }
+
+        body.login-page::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle at 70% 18%, rgba(241, 154, 132, 0.12), transparent 32%);
+        }
+
+        #bgCanvas { opacity: 0.1; }
+
+        .login-wrapper {
+            width: min(100%, 460px);
+            max-width: 460px;
+            padding: 0;
+            position: relative;
+            z-index: 1;
+            animation: ds-surface-in 700ms var(--ds-ease) both;
+        }
+
+        .login-card {
+            padding: clamp(28px, 5vw, 46px);
+            overflow: hidden;
+            border: 1px solid var(--ds-line);
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(29, 18, 30, 0.95), rgba(16, 10, 18, 0.88));
+            box-shadow: var(--ds-shadow);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .login-card::before {
+            background: radial-gradient(circle at 82% 12%, rgba(241, 154, 132, 0.13), transparent 36%);
+        }
+
+        .login-card::after {
+            content: '';
+            position: absolute;
+            inset: 12px;
+            border: 1px solid rgba(249, 237, 232, 0.07);
+            border-radius: 14px;
+            pointer-events: none;
+        }
+
+        .scan-line {
+            background: linear-gradient(90deg, transparent, rgba(241, 154, 132, 0.44), transparent);
+        }
+
+        .logo-area {
+            margin-bottom: 34px;
+            text-align: left;
+        }
+
+        .logo-hex {
+            width: 58px;
+            height: 58px;
+            margin: 0 0 22px;
+            border: 1px solid var(--ds-accent);
+            border-radius: 50%;
+            box-shadow: 0 14px 30px rgba(241, 154, 132, 0.14), inset 0 0 0 7px rgba(241, 154, 132, 0.07);
+            animation: none;
+            transform: none;
+        }
+
+        .logo-hex::after {
+            content: '';
+            position: absolute;
+            width: 7px;
+            height: 7px;
+            top: 12px;
+            right: 10px;
+            border-radius: 50%;
+            background: var(--ds-accent);
+        }
+
+        .logo-hex-inner {
+            top: 17px;
+            left: 17px;
+            right: 17px;
+            bottom: 17px;
+            border: 1px solid rgba(241, 154, 132, 0.72);
+            border-radius: 50%;
+        }
+
+        .login-card h1 {
+            position: relative;
+            z-index: 1;
+            color: var(--ds-text);
+            font-size: clamp(2.5rem, 9vw, 3.6rem);
+            font-weight: 650;
+            letter-spacing: -0.06em;
+            line-height: 0.96;
+            background: none;
+            -webkit-text-fill-color: currentColor;
+            filter: none;
+        }
+
+        .login-card .sub {
+            margin-top: 12px;
+            color: var(--ds-text-muted);
+            font-size: 0.75rem;
+            letter-spacing: 0.17em;
+            line-height: 1.5;
+        }
+
+        .error-msg {
+            position: relative;
+            z-index: 2;
+            padding: 12px 14px;
+            margin-bottom: 22px;
+            border: 1px solid rgba(232, 120, 131, 0.36);
+            border-radius: 10px;
+            background: var(--ds-danger-soft);
+            color: #f4b1b7;
+            font-size: 0.86rem;
+            text-align: left;
+        }
+
+        .form-group { margin-bottom: 20px; }
+
+        .form-group label {
+            margin-bottom: 8px;
+            color: var(--ds-text-soft);
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .form-group input {
+            min-height: 48px;
+            padding: 13px 16px 13px 42px;
+            border: 1px solid var(--ds-line);
+            border-radius: 10px;
+            background: rgba(255, 244, 238, 0.06);
+            color: var(--ds-text);
+            font-family: inherit;
+            letter-spacing: 0;
+        }
+
+        .form-group input:focus {
+            border-color: var(--ds-accent);
+            background: rgba(241, 154, 132, 0.09);
+            box-shadow: 0 0 0 3px rgba(241, 154, 132, 0.1);
+            outline: none;
+        }
+
+        .form-group .input-icon {
+            color: var(--ds-accent);
+            font-size: 0.82rem;
+        }
+
+        .login-btn {
+            min-height: 50px;
+            margin-top: 6px;
+            border: 1px solid var(--ds-accent);
+            border-radius: 10px;
+            background: var(--ds-accent);
+            color: var(--ds-accent-ink);
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            box-shadow: 0 12px 26px rgba(241, 154, 132, 0.18);
+        }
+
+        .login-btn::before { display: none; }
+        .login-btn:hover {
+            border-color: var(--ds-accent-strong);
+            background: var(--ds-accent-strong);
+            color: var(--ds-accent-ink);
+            box-shadow: 0 16px 34px rgba(241, 154, 132, 0.24);
+            transform: translateY(-2px);
+        }
+        .login-btn:active { transform: translateY(0) scale(0.99); }
+
+        .hint,
+        .login-footer {
+            position: relative;
+            z-index: 2;
+            color: var(--ds-text-muted);
+            font-family: inherit;
+            letter-spacing: 0;
+            opacity: 1;
+        }
+
+        .hint {
+            margin-top: 18px;
+            font-size: 0.78rem;
+            text-align: left;
+        }
+
+        .hint code {
+            padding: 0;
+            border: 0;
+            background: none;
+            color: var(--ds-accent-strong);
+            font-family: inherit;
+        }
+
+        .login-footer {
+            margin-top: 18px;
+            font-size: 0.72rem;
+            text-align: center;
+        }
+
+        .login-footer .blink {
+            color: var(--ds-accent);
+            animation: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .login-wrapper { animation: none; }
+        }
+
+        @media (max-width: 520px) {
+            body.login-page { padding: 14px; }
+            .login-card { padding: 28px 22px; }
+            .login-card::after { inset: 8px; }
+        }
+    </style>
 </head>
-<body>
+<body class="login-page">
 
 <canvas id="bgCanvas"></canvas>
 
@@ -145,33 +378,33 @@
         <div class="logo-area">
             <div class="logo-hex"><div class="logo-hex-inner"></div></div>
             <h1>DivaStage</h1>
-            <p class="sub">Terminal Access v2.0</p>
+            <p class="sub">Live2D 虚拟陪伴空间</p>
         </div>
 
         <div class="error-msg" th:if="${error}" th:text="${error}">Error message</div>
 
         <form id="loginForm" method="post" action="/login" autocomplete="off">
             <div class="form-group">
-                <label>Username</label>
+                <label for="userName">账号</label>
                 <div class="input-wrap">
-                    <input type="text" name="userName" id="userName" placeholder="Enter username" th:value="${userName}" value="sekai" autofocus>
+                    <input type="text" name="userName" id="userName" placeholder="输入账号" th:value="${userName}" autofocus>
                     <span class="input-icon">&gt;</span>
                 </div>
             </div>
             <div class="form-group">
-                <label>Passkey</label>
+                <label for="password">密码</label>
                 <div class="input-wrap">
-                    <input type="password" name="password" id="password" placeholder="Enter passkey" value="123456520baba">
+                    <input type="password" name="password" id="password" placeholder="输入密码">
                     <span class="input-icon">&gt;</span>
                 </div>
             </div>
-            <button type="submit" class="login-btn">Initialize Connection</button>
+            <button type="submit" class="login-btn">进入舞台</button>
         </form>
 
-        <p class="hint">Default credentials: <code>sekai</code> / <code>123456520baba</code></p>
+        <p class="hint">登录后可以选择角色、聊天，并查看角色状态。</p>
     </div>
     <p class="login-footer">
-        <span class="blink">&#9679;</span> NODE :: SEKAI-01 &nbsp; STATUS :: ONLINE
+        <span class="blink">&#9679;</span> DIVASTAGE / LIVE2D COMPANION
     </p>
 </div>
 

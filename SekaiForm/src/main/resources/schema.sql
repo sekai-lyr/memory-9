@@ -77,6 +77,57 @@ CREATE TABLE IF NOT EXISTS live2d_chat_config (
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 为已有数据库添加图片相关字段
+-- Agent runtime state.  These tables deliberately keep conversation identifiers
+-- server-side; they are never returned in the public chat response.
+CREATE TABLE IF NOT EXISTS agent_conversation (
+    conversation_id VARCHAR(200) PRIMARY KEY,
+    user_id VARCHAR(200),
+    model_id BIGINT,
+    session_state VARCHAR(40) DEFAULT 'active',
+    rolling_summary CLOB,
+    summary_message_count INT DEFAULT 0,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 ALTER TABLE live2d_chat_config ADD COLUMN IF NOT EXISTS image_model_name VARCHAR(100) DEFAULT 'wanx2.1-t2i-turbo';
 ALTER TABLE live2d_chat_config ADD COLUMN IF NOT EXISTS image_api_url VARCHAR(500);
+
+CREATE TABLE IF NOT EXISTS agent_message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(200) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    content CLOB,
+    modality VARCHAR(30) DEFAULT 'TEXT',
+    attachment_meta CLOB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_memory (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(200),
+    user_id VARCHAR(200),
+    memory_type VARCHAR(40) DEFAULT 'conversation',
+    content CLOB NOT NULL,
+    importance DOUBLE DEFAULT 0.5,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_rag_document (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(200),
+    user_id VARCHAR(200),
+    title VARCHAR(300),
+    content CLOB NOT NULL,
+    metadata CLOB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_execution_event (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(200),
+    phase VARCHAR(40),
+    status VARCHAR(30),
+    message VARCHAR(1000),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

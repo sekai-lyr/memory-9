@@ -17,8 +17,14 @@ public interface Live2DService {
     Result<List<Live2DDialogueDO>> listDialogues(Long modelId);
     Result<Live2DDialogueDO> getRandomDialogue(Long modelId, String category);
     Result<ChatResponse> chat(Long modelId, String message, List<Map<String, Object>> history);
+    Result<ChatResponse> chat(Long modelId, String message, List<Map<String, Object>> history, String conversationId, String userId);
+    Result<ChatResponse> recognizeImage(Long modelId, MultipartFile image, String question);
+    Result<ChatResponse> recognizeImage(Long modelId, MultipartFile image, String question, String conversationId, String userId);
+    Result<ChatResponse> generateImage(Long modelId, String prompt);
+    Result<ChatResponse> generateImage(Long modelId, String prompt, String conversationId, String userId);
     Result<Live2DChatConfigDO> getChatConfig(Long modelId);
     Result<Void> saveChatConfig(Live2DChatConfigDO config);
-    Result<ChatResponse> recognizeImage(Long modelId, MultipartFile image, String question);
-    Result<ChatResponse> generateImage(Long modelId, String prompt);
+    Result<ChatResponse> analyzeFile(Long modelId, MultipartFile file, String question, String conversationId, String userId);
+    Result<ChatResponse> processAudio(Long modelId, MultipartFile audio, String question, String conversationId, String userId);
+    Result<ChatResponse> editImage(Long modelId, MultipartFile image, String instruction, String conversationId, String userId);
 }

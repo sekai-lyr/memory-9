@@ -6,6 +6,7 @@ public class ChatResponse {
     private String reply;
     private String motion;
     private String imageUrl;
+    private String audioUrl;
 
     public ChatResponse() {}
     public ChatResponse(String reply, String motion) {
@@ -18,6 +19,8 @@ public class ChatResponse {
     public void setMotion(String motion) { this.motion = motion; }
     public String getImageUrl() { return imageUrl; }
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+    public String getAudioUrl() { return audioUrl; }
+    public void setAudioUrl(String audioUrl) { this.audioUrl = audioUrl; }
 
     public static class Message {
         private String role;

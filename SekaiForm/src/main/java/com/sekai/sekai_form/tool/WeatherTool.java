@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 public class WeatherTool implements Tool {
     private static final String API_URL = "https://uapis.cn/api/v1/misc/weather";
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final HttpClient httpClient = HttpClient.newHttpClient();
+    private static HttpClient httpClient() { return HttpClient.newHttpClient(); }
     
     @Override public String name() { return "get_weather"; }
     
@@ -54,7 +54,7 @@ public class WeatherTool implements Tool {
                 .GET()
                 .build();
             
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             String body = response.body();
             JsonNode json = mapper.readTree(body);
             

@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 public class TranslateTool implements Tool {
     private static final String API_URL = "https://uapis.cn/api/v1/ai/translate";
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final HttpClient httpClient = HttpClient.newHttpClient();
+    private static HttpClient httpClient() { return HttpClient.newHttpClient(); }
 
     @Override public String name() { return "translate"; }
     @Override public String description() {
@@ -51,7 +51,7 @@ public class TranslateTool implements Tool {
             HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = httpClient().send(req, HttpResponse.BodyHandlers.ofString());
             JsonNode json = mapper.readTree(resp.body());
             if (json.has("data")) {
                 JsonNode d = json.get("data");

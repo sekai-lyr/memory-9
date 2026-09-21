@@ -1,11 +1,23 @@
 // Live2D Kanban - Interactive System
-var app, currentModel, bubbleTimer, idleTimer, lastInteraction = Date.now();
+var app, currentModel, bubbleTimer, mikuSpeechTimer, idleTimer, lastInteraction = Date.now();
 var models2D = [], currentModelName = "", charId = 1;
 var isDragging = false, dragStart = { x:0, y:0 }, modelStart = { x:0, y:0 }, tapCooldown = false;
+var modelScaleDefaults = { "haru_ja": 0.15, "hiyori_en": 0.15, "hatsune_miku": 0.42 };
+var modelScaleFactor = 1, isResizing = false;
+var resizeStart = { x:0, y:0, centerX:0, centerY:0, distance:1, factor:1 };
+var MODEL_SCALE_MIN = 0.5, MODEL_SCALE_MAX = 2.5;
 var affection = 0;
 var mousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+var pointerFrame = null;
 var followActive = true, lastExpression = "";
 var isAiThinking = false;
+var prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function playUiAnimation(el, keyframes, options) {
+    if (!el || prefersReducedMotion || typeof el.animate !== "function") return null;
+    var config = Object.assign({ fill: "both", easing: "cubic-bezier(0.16, 1, 0.3, 1)" }, options || {});
+    return el.animate(keyframes, config);
+}
 
 function getTimeGreeting() {
     var h = new Date().getHours();
@@ -21,19 +33,43 @@ function getTimeGreeting() {
 // --- Character Stats ---
 var charStats = { level:1, exp:0, expToNext:100, hp:100, atk:20, def:10, freePoints:0 };
 var _statsListeners = [];
+var expFillAnimation = null;
 function onStatsChange(fn) { _statsListeners.push(fn); }
 function emitStatsChange() { _statsListeners.forEach(function(f) { try { f(charStats); } catch(e) {} }); }
 
+function animateStatValue(id, value) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var next = String(value);
+    if (el.textContent === next) return;
+    el.textContent = next;
+    playUiAnimation(el, [
+        { opacity: 0.45, transform: "translateY(4px) scale(0.92)" },
+        { opacity: 1, transform: "translateY(0) scale(1)" }
+    ], { duration: 320 });
+}
+
 function updateStatsUI() {
-    document.getElementById("s-level").textContent = charStats.level;
-    document.getElementById("s-hp").textContent = charStats.hp;
-    document.getElementById("s-atk").textContent = charStats.atk;
-    document.getElementById("s-def").textContent = charStats.def;
-    document.getElementById("free-pts").textContent = charStats.freePoints;
-    document.getElementById("aff-val").textContent = affection;
+    animateStatValue("s-level", charStats.level);
+    animateStatValue("s-hp", charStats.hp);
+    animateStatValue("s-atk", charStats.atk);
+    animateStatValue("s-def", charStats.def);
+    animateStatValue("free-pts", charStats.freePoints);
+    animateStatValue("aff-val", affection);
     var pct = charStats.expToNext > 0 ? (charStats.exp / charStats.expToNext * 100) : 100;
-    document.getElementById("exp-bar-fill").style.width = pct + "%";
-    document.getElementById("exp-text").textContent = "EXP " + charStats.exp + " / " + charStats.expToNext;
+    var fill = document.getElementById("exp-bar-fill");
+    var nextProgress = Math.max(0, Math.min(1, pct / 100));
+    var previousProgress = parseFloat(fill.dataset.progress || "0");
+    fill.dataset.progress = String(nextProgress);
+    fill.style.transform = "scaleX(" + nextProgress + ")";
+    if (expFillAnimation) expFillAnimation.cancel();
+    if (Math.abs(previousProgress - nextProgress) > 0.001) {
+        expFillAnimation = playUiAnimation(fill, [
+            { transform: "scaleX(" + previousProgress + ")" },
+            { transform: "scaleX(" + nextProgress + ")" }
+        ], { duration: 520 });
+    }
+    document.getElementById("exp-text").textContent = "经验 " + charStats.exp + " / " + charStats.expToNext;
     ["btn-hp","btn-atk","btn-def"].forEach(function(id) {
         document.getElementById(id).disabled = charStats.freePoints <= 0;
     });
@@ -46,7 +82,43 @@ function toast(msg) {
     document.getElementById("toast-area").appendChild(t);
     setTimeout(function() { t.remove(); }, 2200);
 }
-function log(msg) { document.getElementById("status-text").textContent = msg; }
+
+function setChatBusy(busy) {
+    var buttons = [
+        document.getElementById("chat-send"),
+        document.querySelector("#chat-win-input button")
+    ];
+    buttons.forEach(function(button) {
+        if (!button) return;
+        if (busy) {
+            if (!button.dataset.readyLabel) button.dataset.readyLabel = button.textContent;
+            button.disabled = true;
+            button.classList.add("is-busy");
+            button.setAttribute("aria-busy", "true");
+            button.textContent = "思考中";
+        } else {
+            button.disabled = false;
+            button.classList.remove("is-busy");
+            button.removeAttribute("aria-busy");
+            button.textContent = button.dataset.readyLabel || "发送";
+        }
+    });
+    var chatArea = document.getElementById("chat-area");
+    if (chatArea) chatArea.classList.toggle("is-busy", busy);
+}
+
+function log(msg) {
+    var status = document.getElementById("status-text");
+    if (!status) return;
+    status.textContent = msg;
+    status.classList.remove("status-flip");
+    void status.offsetWidth;
+    status.classList.add("status-flip");
+    playUiAnimation(status, [
+        { opacity: 0.35, transform: "translateX(-50%) translateY(4px)" },
+        { opacity: 1, transform: "translateX(-50%) translateY(0)" }
+    ], { duration: 220 });
+}
 
 // ===== Danmaku System =====
 var danmakuQueue = [];
@@ -101,7 +173,7 @@ function showDialog(x, y) {
     hideDialog();
     var d = document.createElement("div");
     d.id = "dialog-panel";
-    d.innerHTML = '<div class="dlg-item" onclick="doTrain()">⚔️ 训练</div>';
+    d.innerHTML = '<div class="dlg-item" onclick="doTrain()">训练角色</div>';
     d.style.left = Math.min(x, window.innerWidth - 160) + "px";
     d.style.top = Math.min(y, window.innerHeight - 160) + "px";
     document.body.appendChild(d);
@@ -126,8 +198,8 @@ function doTrain() {
     affection += 2;
     saveAffection();
     if (!tapCooldown) { tapCooldown = true; setTimeout(function() { tapCooldown = false; }, 800); try { currentModel.motion("Tap"); } catch(e) {} }
-    showBubble("训练辛苦了！EXP +10 ♥+2 ✨");
-    showFloatText("+10 EXP +2 ♥", "#ffcc44");
+    showBubble("训练辛苦了，经验加 10，羁绊加 2");
+    showFloatText("经验 +10 | 羁绊 +2", "var(--ds-accent-strong)");
     lastInteraction = Date.now();
 }
 
@@ -226,7 +298,7 @@ async function allocPoint(stat) {
             Object.assign(charStats, j.data);
             charStats.expToNext = charStats.level * 100;
             emitStatsChange();
-            toast(stat + " +1!");
+            toast(stat + " 属性 +1");
         }
     } catch(e) {}
 }
@@ -250,12 +322,25 @@ function toggleStatsPanel() {
     var p = document.getElementById("stats-panel");
     var b = document.getElementById("stats-toggle");
     p.classList.toggle("collapsed");
-    b.textContent = p.classList.contains("collapsed") ? "☰" : "◁";
+    var collapsed = p.classList.contains("collapsed");
+    b.textContent = collapsed ? "OPEN" : "CLOSE";
+    b.title = collapsed ? "展开角色状态" : "收起角色状态";
+    b.setAttribute("aria-expanded", String(!collapsed));
+    var content = p.querySelector(".stats-content");
+    if (content) {
+        playUiAnimation(content, collapsed ? [
+            { opacity: 1, transform: "translateY(0)" },
+            { opacity: 0, transform: "translateY(-8px)" }
+        ] : [
+            { opacity: 0, transform: "translateY(-8px)" },
+            { opacity: 1, transform: "translateY(0)" }
+        ], { duration: 280 });
+    }
 }
 
 function flashLevelUp(times) {
     var el = document.getElementById("level-up-flash");
-    el.textContent = times > 1 ? "LEVEL UP x" + times + "!" : "LEVEL UP!";
+    el.textContent = times > 1 ? "等级提升 x" + times : "等级提升";
     el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
 }
 
@@ -333,7 +418,7 @@ function updateBubblePosition() {
     if (headY === null) {
         var mh = currentModel.height;
         if (mh && mh > 0) {
-            var ratios = { "haru_ja": 0.35, "hiyori_en": 0.35, "aidang_2": 0.25, "biaoqiang_3": 0.25 };
+            var ratios = { "haru_ja": 0.35, "hiyori_en": 0.35, "hatsune_miku": 0.3 };
             headY = currentModel.y - mh * (ratios[currentModelName] || 0.3);
         }
     }
@@ -343,14 +428,14 @@ function updateBubblePosition() {
         var knownH = currentModel._knownCanvasH;
         if (knownH && knownH > 0) {
             var estH = knownH * (currentModel.scale ? currentModel.scale.y : (currentModel.scale || 0.15));
-            var ratios = { "haru_ja": 0.35, "hiyori_en": 0.35, "aidang_2": 0.25, "biaoqiang_3": 0.25 };
+            var ratios = { "haru_ja": 0.35, "hiyori_en": 0.35, "hatsune_miku": 0.3 };
             if (estH > 0) headY = currentModel.y - estH * (ratios[currentModelName] || 0.3);
         }
     }
 
     // Strategy 4: Hardcoded pixel offsets
     if (headY === null) {
-        var off = { "haru_ja": 160, "hiyori_en": 160, "aidang_2": 120, "biaoqiang_3": 120 };
+        var off = { "haru_ja": 160, "hiyori_en": 160, "hatsune_miku": 170 };
         headY = currentModel.y - (off[currentModelName] || 160);
     }
 
@@ -364,6 +449,14 @@ function showBubble(t) {
     b.textContent = t; b.classList.add("show");
     updateBubblePosition();
     bubbleTimer = setTimeout(function() { b.classList.remove("show"); }, 3000);
+    if (mikuSpeechTimer) clearTimeout(mikuSpeechTimer);
+    if (currentModel && currentModel.setMouthOpen) {
+        var speechDuration = Math.min(2800, Math.max(520, String(t || "").length * 42));
+        currentModel.setMouthOpen(0.72, speechDuration);
+        mikuSpeechTimer = setTimeout(function() {
+            if (currentModel && currentModel.setMouthOpen) currentModel.setMouthOpen(0, 0);
+        }, speechDuration);
+    }
 }
 
 // --- Idle ---
@@ -417,7 +510,7 @@ var proximityCheck = null;
 function startProximityCheck() {
     if (proximityCheck) clearInterval(proximityCheck);
     proximityCheck = setInterval(function() {
-        if (!currentModel || isDragging || isAiThinking) return;
+        if (!currentModel || isDragging || isResizing || isAiThinking) return;
         var dx = mousePos.x - currentModel.x;
         var dy = (mousePos.y - 80) - currentModel.y;
         var dist = Math.sqrt(dx * dx + dy * dy);
@@ -438,22 +531,164 @@ function startProximityCheck() {
     }, 3000);
 }
 
+// --- Model size controls ---
+function clampModelScaleFactor(value) {
+    return Math.max(MODEL_SCALE_MIN, Math.min(MODEL_SCALE_MAX, value));
+}
+
+function getModelBaseScale(name) {
+    return modelScaleDefaults[name] || 0.15;
+}
+
+function getModelScaleStorageKey(name) {
+    return "divastage:model-scale:" + name;
+}
+
+function readModelScaleFactor(name) {
+    try {
+        var saved = parseFloat(localStorage.getItem(getModelScaleStorageKey(name)));
+        if (Number.isFinite(saved)) return clampModelScaleFactor(saved);
+    } catch(_) {}
+    return 1;
+}
+
+function saveModelScaleFactor() {
+    try { localStorage.setItem(getModelScaleStorageKey(currentModelName), String(modelScaleFactor)); } catch(_) {}
+}
+
+function updateModelScaleControls() {
+    var slider = document.getElementById("model-size-slider");
+    var value = document.getElementById("model-size-value");
+    var percent = Math.round(modelScaleFactor * 100);
+    if (slider) slider.value = String(percent);
+    if (value) value.textContent = percent + "%";
+}
+
+function setModelScaleFactor(factor, shouldPersist) {
+    if (!currentModel || !Number.isFinite(Number(factor))) return;
+    modelScaleFactor = clampModelScaleFactor(Number(factor));
+    currentModel.scale.set(getModelBaseScale(currentModelName) * modelScaleFactor);
+    updateModelScaleControls();
+    if (shouldPersist !== false) saveModelScaleFactor();
+    updateBubblePosition();
+    updateModelResizeUi();
+}
+
+function setModelScaleFromControl(value) {
+    setModelScaleFactor(parseFloat(value) / 100);
+}
+
+function resetModelSize() {
+    setModelScaleFactor(1);
+    showToast("模型大小已重置");
+}
+
+function updateModelResizeUi() {
+    var ui = document.getElementById("model-resize-ui");
+    var outline = document.getElementById("model-resize-outline");
+    var handle = document.getElementById("model-resize-handle");
+    if (!ui || !outline || !handle) return;
+    if (!currentModel || !document.body.classList.contains("model-ready")) {
+        ui.hidden = true;
+        return;
+    }
+
+    var bounds;
+    try { bounds = currentModel.getBounds(); } catch(_) { return; }
+    if (!bounds || !Number.isFinite(bounds.x) || !Number.isFinite(bounds.y) ||
+        !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height) ||
+        bounds.width <= 0 || bounds.height <= 0) return;
+
+    ui.hidden = false;
+    outline.style.left = bounds.x + "px";
+    outline.style.top = bounds.y + "px";
+    outline.style.width = bounds.width + "px";
+    outline.style.height = bounds.height + "px";
+    handle.style.left = (bounds.x + bounds.width) + "px";
+    handle.style.top = (bounds.y + bounds.height) + "px";
+}
+
+function startModelResize(e) {
+    if (!currentModel || isAiThinking) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var bounds;
+    try { bounds = currentModel.getBounds(); } catch(_) { return; }
+    var centerX = bounds.x + bounds.width / 2;
+    var centerY = bounds.y + bounds.height / 2;
+    var distance = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+    resizeStart = {
+        x: e.clientX,
+        y: e.clientY,
+        centerX: centerX,
+        centerY: centerY,
+        distance: Math.max(1, distance),
+        factor: modelScaleFactor
+    };
+    isResizing = true;
+    currentModel.alpha = 0.8;
+    var ui = document.getElementById("model-resize-ui");
+    if (ui) ui.classList.add("is-resizing");
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch(_) {}
+}
+
+function moveModelResize(e) {
+    if (!isResizing) return;
+    e.preventDefault();
+    var distance = Math.hypot(e.clientX - resizeStart.centerX, e.clientY - resizeStart.centerY);
+    setModelScaleFactor(resizeStart.factor * distance / resizeStart.distance, false);
+}
+
+function endModelResize() {
+    if (!isResizing) return;
+    isResizing = false;
+    if (currentModel) currentModel.alpha = 1;
+    saveModelScaleFactor();
+    var ui = document.getElementById("model-resize-ui");
+    if (ui) ui.classList.remove("is-resizing");
+    updateModelResizeUi();
+}
+
+function adjustModelScaleWithKeyboard(e) {
+    var delta = 0;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") delta = e.shiftKey ? 0.1 : 0.05;
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") delta = e.shiftKey ? -0.1 : -0.05;
+    if (e.key === "Home") delta = 1 - modelScaleFactor;
+    if (e.key === "End") delta = MODEL_SCALE_MAX - modelScaleFactor;
+    if (!delta) return;
+    e.preventDefault();
+    setModelScaleFactor(modelScaleFactor + delta);
+}
+
+function setupModelResizeControls() {
+    var handle = document.getElementById("model-resize-handle");
+    if (!handle || handle.dataset.bound === "true") return;
+    handle.dataset.bound = "true";
+    handle.addEventListener("pointerdown", startModelResize);
+    handle.addEventListener("keydown", adjustModelScaleWithKeyboard);
+    window.addEventListener("pointermove", moveModelResize);
+    window.addEventListener("pointerup", endModelResize);
+    window.addEventListener("pointercancel", endModelResize);
+}
+
 // --- Init ---
 async function init() {
-    log("Starting...");
+    log("正在启动舞台...");
     var canvas = document.getElementById("live2d-canvas");
 
     app = new PIXI.Application({
         view: canvas, resizeTo: window, backgroundAlpha: 0,
         antialias: true, resolution: window.devicePixelRatio || 1
     });
+    setupModelResizeControls();
+    app.ticker.add(updateModelResizeUi);
 
-    log("Starting Cubism4...");
+    log("正在启动 Cubism4...");
     try {
         PIXI.live2d.startUpCubism4();
         await PIXI.live2d.cubism4Ready;
-        log("Cubism4 ready");
-    } catch(e) { log("Cubism4 fail: " + e.message); return; }
+        log("Cubism4 已就绪");
+    } catch(e) { log("Cubism4 启动失败: " + e.message); return; }
     await loadCharStats();
     await loadModelList();
 
@@ -462,13 +697,21 @@ async function init() {
             currentModel.x = window.innerWidth / 2;
             currentModel.y = (window.innerHeight - 80) / 2;
             updateBubblePosition();
+            updateModelResizeUi();
         }
     });
 
     document.addEventListener("mousemove", function(e) {
         mousePos.x = e.clientX;
         mousePos.y = e.clientY;
-        if (currentModel && followActive && !isDragging) {
+        if (pointerFrame === null && !prefersReducedMotion) {
+            pointerFrame = requestAnimationFrame(function() {
+                document.documentElement.style.setProperty("--pointer-x", mousePos.x + "px");
+                document.documentElement.style.setProperty("--pointer-y", mousePos.y + "px");
+                pointerFrame = null;
+            });
+        }
+        if (currentModel && followActive && !isDragging && !isResizing) {
             try {
                 var nx = e.clientX / window.innerWidth;
                 var ny = e.clientY / window.innerHeight;
@@ -481,6 +724,423 @@ async function init() {
 }
 
 // --- Model loading ---
+async function createHatsuneMikuModel() {
+    var baseUrl = "/live2d-models/hatsune_miku/";
+    var bodyTexture;
+    try {
+        bodyTexture = await PIXI.Assets.load(baseUrl + "hatsune_miku.png");
+    } catch(_) {
+        bodyTexture = await PIXI.Assets.load(baseUrl + "hatsune_miku.svg");
+    }
+    var modelWidth = bodyTexture.width || 881;
+    var modelHeight = bodyTexture.height || 1589;
+    var centerX = modelWidth / 2;
+    var centerY = modelHeight / 2;
+    var model = new PIXI.Container();
+    var visual = new PIXI.Container();
+    var body = PIXI.SimplePlane
+        ? new PIXI.SimplePlane(bodyTexture, 9, 17)
+        : new PIXI.Sprite(bodyTexture);
+    if (PIXI.SimplePlane) {
+        body.position.set(-centerX, -centerY);
+    } else {
+        body.anchor.set(0.5);
+    }
+    var bodyPositionBuffer = body.geometry && typeof body.geometry.getBuffer === "function"
+        ? body.geometry.getBuffer("aVertexPosition") : null;
+    var bodyBaseVertices = bodyPositionBuffer ? new Float32Array(bodyPositionBuffer.data) : null;
+    visual.addChild(body);
+    model.addChild(visual);
+
+    function toLocalPoints(points) {
+        var local = [];
+        points.forEach(function(point) {
+            local.push(point[0] - centerX, point[1] - centerY);
+        });
+        return local;
+    }
+
+    function createMaskedLayer(points) {
+        var layer = new PIXI.Container();
+        var sprite = new PIXI.Sprite(bodyTexture);
+        var mask = new PIXI.Graphics();
+        sprite.anchor.set(0.5);
+        mask.beginFill(0xffffff);
+        mask.drawPolygon(toLocalPoints(points));
+        mask.endFill();
+        mask.renderable = false;
+        sprite.mask = mask;
+        layer.addChild(sprite);
+        layer.addChild(mask);
+        visual.addChild(layer);
+        return layer;
+    }
+
+    // Broad masks retain the original illustration while making the hair
+    // pieces independently movable, like a lightweight cutout rig.
+    var leftTwinTail = createMaskedLayer([
+        [0, 0], [302, 0], [323, 220], [300, 520], [302, 820],
+        [276, 1100], [230, 1325], [125, 1535], [0, 1589],
+        [22, 1310], [60, 1060], [74, 820], [92, 550], [58, 260]
+    ]);
+    var rightTwinTail = createMaskedLayer([
+        [579, 0], [881, 0], [823, 260], [789, 550], [807, 820],
+        [821, 1060], [859, 1310], [881, 1589], [756, 1535],
+        [651, 1325], [605, 1100], [579, 820], [581, 520], [558, 220]
+    ]);
+    var frontHair = createMaskedLayer([
+        [255, 40], [626, 40], [670, 120], [641, 190], [606, 286],
+        [566, 237], [520, 306], [473, 245], [440, 320], [399, 246],
+        [347, 298], [314, 239], [268, 286], [226, 170]
+    ]);
+    var torso = createMaskedLayer([
+        [286, 286], [595, 286], [642, 480], [595, 690], [440, 748],
+        [285, 690], [238, 480]
+    ]);
+    var leftSleeve = createMaskedLayer([
+        [170, 386], [350, 382], [351, 680], [287, 820], [156, 850],
+        [113, 690], [125, 500]
+    ]);
+    var rightSleeve = createMaskedLayer([
+        [530, 382], [711, 386], [756, 500], [768, 690], [725, 850],
+        [594, 820], [530, 680]
+    ]);
+    var skirt = createMaskedLayer([
+        [222, 578], [658, 578], [738, 815], [680, 860], [200, 860], [143, 815]
+    ]);
+    var tie = createMaskedLayer([
+        [388, 298], [493, 298], [523, 630], [440, 735], [357, 630]
+    ]);
+
+    function setLayerPivot(layer, x, y) {
+        var px = x - centerX;
+        var py = y - centerY;
+        layer.pivot.set(px, py);
+        layer.position.set(px, py);
+        return { x: px, y: py };
+    }
+    var torsoPivot = setLayerPivot(torso, 440, 470);
+    var leftSleevePivot = setLayerPivot(leftSleeve, 274, 490);
+    var rightSleevePivot = setLayerPivot(rightSleeve, 606, 490);
+    var skirtPivot = setLayerPivot(skirt, 440, 720);
+    var tiePivot = setLayerPivot(tie, 440, 430);
+
+    var faceFx = new PIXI.Container();
+    var faceEyeY = modelHeight * 0.145 - centerY;
+    var faceMouthY = modelHeight * 0.174 - centerY;
+    var eyeOffsetX = modelWidth * 0.058;
+    var skinColor = 0xf3d9d3;
+    var mouthColor = 0x5d4c59;
+    var eyeLidLeft = new PIXI.Graphics();
+    var eyeLidRight = new PIXI.Graphics();
+    var mouthPatch = new PIXI.Graphics();
+    var mouth = new PIXI.Graphics();
+    var leftCheek = new PIXI.Graphics();
+    var rightCheek = new PIXI.Graphics();
+    var leftBrow = new PIXI.Graphics();
+    var rightBrow = new PIXI.Graphics();
+
+    function makeEyeLid(graphics) {
+        graphics.beginFill(skinColor);
+        graphics.drawEllipse(0, 0, modelWidth * 0.033, modelHeight * 0.012);
+        graphics.endFill();
+        graphics.alpha = 0;
+        faceFx.addChild(graphics);
+    }
+
+    makeEyeLid(eyeLidLeft);
+    makeEyeLid(eyeLidRight);
+    mouthPatch.beginFill(skinColor);
+    mouthPatch.drawEllipse(0, 0, modelWidth * 0.033, modelHeight * 0.011);
+    mouthPatch.endFill();
+    mouthPatch.alpha = 0;
+    faceFx.addChild(mouthPatch);
+
+    leftCheek.beginFill(0xf28ea4, 0.22);
+    leftCheek.drawEllipse(0, 0, modelWidth * 0.026, modelHeight * 0.009);
+    leftCheek.endFill();
+    rightCheek.beginFill(0xf28ea4, 0.22);
+    rightCheek.drawEllipse(0, 0, modelWidth * 0.026, modelHeight * 0.009);
+    rightCheek.endFill();
+    faceFx.addChild(leftCheek);
+    faceFx.addChild(rightCheek);
+
+    leftBrow.lineStyle(3, mouthColor, 0.75);
+    leftBrow.moveTo(-modelWidth * 0.032, 0);
+    leftBrow.lineTo(modelWidth * 0.005, -modelHeight * 0.006);
+    rightBrow.lineStyle(3, mouthColor, 0.75);
+    rightBrow.moveTo(-modelWidth * 0.005, -modelHeight * 0.006);
+    rightBrow.lineTo(modelWidth * 0.032, 0);
+    leftBrow.alpha = 0;
+    rightBrow.alpha = 0;
+    faceFx.addChild(leftBrow);
+    faceFx.addChild(rightBrow);
+    visual.addChild(faceFx);
+
+    eyeLidLeft.position.set(-eyeOffsetX, faceEyeY);
+    eyeLidRight.position.set(eyeOffsetX, faceEyeY);
+    mouthPatch.position.set(0, faceMouthY);
+    mouth.position.set(0, faceMouthY);
+    leftCheek.position.set(-modelWidth * 0.09, faceMouthY + modelHeight * 0.019);
+    rightCheek.position.set(modelWidth * 0.09, faceMouthY + modelHeight * 0.019);
+    leftBrow.position.set(-eyeOffsetX, faceEyeY - modelHeight * 0.025);
+    rightBrow.position.set(eyeOffsetX, faceEyeY - modelHeight * 0.025);
+
+    var expressionNames = ["Normal", "Smile", "Sad", "Angry", "Surprised"];
+    var expression = "Normal";
+    var mouthOpen = 0;
+    var mouthTarget = 0;
+
+    function redrawFaceFx() {
+        var isOpen = mouthOpen > 0.045 || expression !== "Normal";
+        mouthPatch.alpha = isOpen ? 0.96 : 0;
+        mouth.clear();
+        if (isOpen) {
+            var open = Math.max(0.03, mouthOpen);
+            mouth.lineStyle(2, mouthColor, 0.92);
+            if (expression === "Surprised") {
+                mouth.beginFill(mouthColor, 0.82);
+                mouth.drawEllipse(0, 0, modelWidth * 0.012 + open * 8, modelHeight * 0.009 + open * 8);
+                mouth.endFill();
+            } else {
+                mouth.moveTo(-modelWidth * 0.022, expression === "Sad" ? modelHeight * 0.003 : 0);
+                mouth.quadraticCurveTo(0,
+                    (expression === "Sad" ? -1 : 1) * modelHeight * 0.006 + open * 9,
+                    modelWidth * 0.022, expression === "Sad" ? modelHeight * 0.003 : 0);
+            }
+        }
+        var cheekAlpha = expression === "Smile" ? 0.42 : expression === "Sad" ? 0.12 : 0.06;
+        leftCheek.alpha = cheekAlpha;
+        rightCheek.alpha = cheekAlpha;
+        leftBrow.alpha = expression === "Angry" || expression === "Sad" ? 0.78 : 0;
+        rightBrow.alpha = leftBrow.alpha;
+        if (expression === "Angry") {
+            leftBrow.rotation = -0.16;
+            rightBrow.rotation = 0.16;
+        } else if (expression === "Sad") {
+            leftBrow.rotation = 0.15;
+            rightBrow.rotation = -0.15;
+        } else {
+            leftBrow.rotation = 0;
+            rightBrow.rotation = 0;
+        }
+        setParameterAliases(["EyeLSmile", "ParamEyeLSmile", "PARAM_EYE_L_SMILE"], expression === "Smile" ? 1 : 0);
+        setParameterAliases(["EyeRSmile", "ParamEyeRSmile", "PARAM_EYE_R_SMILE"], expression === "Smile" ? 1 : 0);
+        setParameterAliases(["MouthForm", "ParamMouthForm", "PARAM_MOUTH_FORM"], expression === "Smile" ? 1 : expression === "Sad" ? -1 : 0);
+        setParameterAliases(["Cheek", "ParamCheek", "PARAM_TERE"], cheekAlpha);
+        setParameterAliases(["BrowLForm", "ParamBrowLForm", "PARAM_BROW_L_FORM"], expression === "Angry" ? -1 : expression === "Sad" ? 1 : 0);
+        setParameterAliases(["BrowRForm", "ParamBrowRForm", "PARAM_BROW_R_FORM"], expression === "Angry" ? -1 : expression === "Sad" ? 1 : 0);
+    }
+
+    function updateBodyMesh(focusX, focusY, phase, motionPulse) {
+        if (!bodyPositionBuffer || !bodyBaseVertices) return;
+        var vertices = bodyPositionBuffer.data;
+        var vertexCount = bodyBaseVertices.length / 2;
+        var breath = prefersReducedMotion ? 0 : Math.sin(phase * 1.8);
+        for (var i = 0; i < vertexCount; i++) {
+            var index = i * 2;
+            var baseX = bodyBaseVertices[index];
+            var baseY = bodyBaseVertices[index + 1];
+            var ny = modelHeight > 0 ? baseY / modelHeight : 0;
+            var torsoWeight = Math.max(0, 1 - Math.abs(ny - 0.42) / 0.25);
+            var skirtWeight = Math.max(0, 1 - Math.abs(ny - 0.49) / 0.2);
+            var perspective = 1 + focusX * 0.055 * (0.5 - ny);
+            var x = centerX + (baseX - centerX) * perspective + focusX * (1 - ny) * 15;
+            var y = baseY - focusY * (1 - ny) * 5;
+            x += breath * torsoWeight * 1.8;
+            y -= breath * torsoWeight * 1.1;
+            x += Math.sin(phase * 1.5 + ny * 4.2) * (skirtWeight * 2 + motionPulse * 2);
+            y += motionPulse * skirtWeight * 3;
+            vertices[index] = x;
+            vertices[index + 1] = y;
+        }
+        bodyPositionBuffer.update();
+    }
+
+    model.hitArea = new PIXI.Rectangle(-modelWidth / 2, -modelHeight / 2, modelWidth, modelHeight);
+    model._mikuVisual = visual;
+    model._mikuFocusX = 0;
+    model._mikuFocusY = 0;
+    model._mikuFocusTargetX = 0;
+    model._mikuFocusTargetY = 0;
+    model._mikuMotion = "Idle";
+    model._mikuMotionBase = "Idle";
+    model._mikuMotionStarted = 0;
+    model._mikuMotionUntil = 0;
+    model._mikuExpression = expression;
+    model._mikuMouthOpen = 0;
+    model._mikuMouthHoldUntil = 0;
+    model._mikuParameters = {
+        AngleX: 0,
+        AngleY: 0,
+        AngleZ: 0,
+        EyeLOpen: 1,
+        EyeLSmile: 0,
+        EyeROpen: 1,
+        EyeRSmile: 0,
+        EyeBallX: 0,
+        EyeBallY: 0,
+        BrowLForm: 0,
+        BrowRForm: 0,
+        MouthForm: 0,
+        MouthOpenY: 0,
+        Cheek: 0,
+        BodyAngleZ: 0,
+        BodyAngleX: 0,
+        BodyAngleY: 0,
+        Breath: 0,
+        ArmLA: 0,
+        ArmRA: 0,
+        BustY: 0,
+        HairAhoge: 0,
+        HairFront: 0,
+        HairSide: 0,
+        HairBack: 0,
+        HairSideUp: 0,
+        Ribbon: 0,
+        Skirt: 0,
+        SideUpRibbon: 0,
+        EyeBlink: 1,
+        MouthOpen: 0
+    };
+    function setParameterAliases(ids, value) {
+        ids.forEach(function(id) { model._mikuParameters[id] = value; });
+    }
+    model.getParameterValueById = function(id) {
+        return Number(model._mikuParameters[id] || 0);
+    };
+    model.setParameterValueById = function(id, value) {
+        model._mikuParameters[id] = Number(value) || 0;
+    };
+    model.focus = {
+        set: function(nx, ny) {
+            model._mikuFocusTargetX = Math.max(-1, Math.min(1, (Number(nx) - 0.5) * 2));
+            model._mikuFocusTargetY = Math.max(-1, Math.min(1, (Number(ny) - 0.5) * 2));
+        }
+    };
+    model.motion = function(name) {
+        var nextMotion = name || "Idle";
+        var now = performance.now();
+        var motionBase = nextMotion.split("@")[0];
+        model._mikuMotion = nextMotion;
+        model._mikuMotionBase = motionBase;
+        model._mikuMotionStarted = now;
+        model._mikuMotionUntil = now + (motionBase === "Idle" ? 900 : 720);
+        if (motionBase !== "Idle") model._mikuMouthHoldUntil = now + 420;
+    };
+    model.expression = function(name) {
+        expression = expressionNames.indexOf(name) >= 0 ? name : "Normal";
+        model._mikuExpression = expression;
+        redrawFaceFx();
+    };
+    model.setMouthOpen = function(value, duration) {
+        mouthTarget = Math.max(0, Math.min(1, Number(value) || 0));
+        model._mikuMouthHoldUntil = performance.now() + (Number(duration) || 0);
+    };
+    var nextBlinkAt = performance.now() + 1800 + Math.random() * 2600;
+    var blinkStarted = 0;
+    var lastTickAt = performance.now();
+    model._mikuTick = function() {
+        if (model.destroyed) return;
+        var now = performance.now();
+        var phase = now / 1000;
+        var delta = Math.min(0.05, Math.max(0.001, (now - lastTickAt) / 1000));
+        lastTickAt = now;
+        var motionActive = now < model._mikuMotionUntil;
+        var motion = model._mikuMotion;
+        var motionBase = model._mikuMotionBase || motion;
+        var motionProgress = motionActive && model._mikuMotionUntil > model._mikuMotionStarted
+            ? Math.max(0, Math.min(1, (now - model._mikuMotionStarted) /
+                (model._mikuMotionUntil - model._mikuMotionStarted))) : 0;
+        var motionPulse = motionActive ? Math.sin(motionProgress * Math.PI) : 0;
+        model._mikuFocusX += (model._mikuFocusTargetX - model._mikuFocusX) * Math.min(1, delta * 8);
+        model._mikuFocusY += (model._mikuFocusTargetY - model._mikuFocusY) * Math.min(1, delta * 8);
+        var focusX = model._mikuFocusX;
+        var focusY = model._mikuFocusY;
+        var bob = prefersReducedMotion ? 0 : Math.sin(phase * 1.8) * 3;
+        var shake = motionBase === "Shake" && !prefersReducedMotion ? Math.sin(phase * 24) * 0.035 * motionPulse : 0;
+        var focusLean = focusX * 0.04;
+        var actionLean = motionBase === "Flick" || motionBase === "FlickDown" ? -0.045 * motionPulse
+            : motionBase === "FlickLeft" ? 0.055 * motionPulse
+                : motionBase === "FlickRight" ? -0.055 * motionPulse
+                    : motionBase === "Tap" ? 0.02 * motionPulse : 0;
+        visual.x = focusX * 10;
+        visual.y = bob - motionPulse * 7 + focusY * 5;
+        visual.rotation = focusLean + actionLean + shake - motionPulse * 0.02;
+        var breathe = prefersReducedMotion ? 1 : 1 + Math.sin(phase * 1.8) * 0.006;
+        visual.scale.set(breathe + motionPulse * 0.004, breathe - motionPulse * 0.002);
+        updateBodyMesh(focusX, focusY, phase, motionPulse);
+        var bodyBreath = prefersReducedMotion ? 0 : Math.sin(phase * 1.8);
+        torso.position.set(torsoPivot.x + focusX * 3, torsoPivot.y + bodyBreath * 1.5 - motionPulse * 2);
+        torso.rotation = focusX * 0.012 + bodyBreath * 0.004;
+        torso.scale.set(1 + motionPulse * 0.004, 1 + bodyBreath * 0.004);
+        leftSleeve.position.set(leftSleevePivot.x + focusX * 2, leftSleevePivot.y + motionPulse * 2);
+        rightSleeve.position.set(rightSleevePivot.x + focusX * 2, rightSleevePivot.y + motionPulse * 2);
+        leftSleeve.rotation = Math.sin(phase * 1.55 + 0.5) * 0.018 + focusX * 0.012 + shake;
+        rightSleeve.rotation = -Math.sin(phase * 1.55 + 0.8) * 0.018 + focusX * 0.012 - shake;
+        skirt.position.set(skirtPivot.x + focusX * 2, skirtPivot.y + bodyBreath * 1.2 - motionPulse * 2);
+        skirt.rotation = Math.sin(phase * 1.35) * 0.012 + focusX * 0.01;
+        tie.position.set(tiePivot.x + focusX * 2, tiePivot.y + bodyBreath * 2);
+        tie.rotation = Math.sin(phase * 1.65 + 0.4) * 0.025 + focusX * 0.014;
+        leftTwinTail.x = focusX * 3 + Math.sin(phase * 1.45) * 2;
+        leftTwinTail.y = Math.sin(phase * 1.7) * 2 - motionPulse * 4;
+        leftTwinTail.rotation = Math.sin(phase * 1.45 + 0.4) * 0.035 + focusX * 0.018 + shake;
+        rightTwinTail.x = focusX * 3 - Math.sin(phase * 1.45) * 2;
+        rightTwinTail.y = Math.sin(phase * 1.7 + 0.8) * 2 - motionPulse * 4;
+        rightTwinTail.rotation = -Math.sin(phase * 1.45 + 0.8) * 0.035 + focusX * 0.018 - shake;
+        frontHair.x = focusX * 2;
+        frontHair.y = focusY * 2 + Math.sin(phase * 2.4) * 1.2;
+        frontHair.rotation = focusX * 0.015 + Math.sin(phase * 2.1) * 0.008;
+        faceFx.x = focusX * 1.2;
+        faceFx.y = focusY * 1.4;
+
+        if (!prefersReducedMotion && now >= nextBlinkAt && !blinkStarted) blinkStarted = now;
+        var blink = 0;
+        if (blinkStarted) {
+            var blinkAge = now - blinkStarted;
+            blink = blinkAge < 170 ? Math.sin((blinkAge / 170) * Math.PI) : 0;
+            if (blinkAge >= 170) {
+                blinkStarted = 0;
+                nextBlinkAt = now + 2500 + Math.random() * 4200;
+            }
+        }
+        eyeLidLeft.alpha = blink;
+        eyeLidRight.alpha = blink;
+        model._mikuParameters.EyeBlink = 1 - blink;
+
+        if (now >= model._mikuMouthHoldUntil) mouthTarget = 0;
+        var motionMouth = motionActive && motionBase !== "Idle" ? 0.16 + motionPulse * 0.2 : 0;
+        var expressionMouth = expression === "Surprised" ? 0.42 : expression === "Smile" ? 0.16 : 0;
+        var nextMouth = Math.max(mouthTarget, motionMouth, expressionMouth);
+        mouthOpen += (nextMouth - mouthOpen) * Math.min(1, delta * 13);
+        model._mikuMouthOpen = mouthOpen;
+        model._mikuParameters.MouthOpen = mouthOpen;
+        setParameterAliases(["AngleX", "ParamAngleX", "PARAM_ANGLE_X"], focusX);
+        setParameterAliases(["AngleY", "ParamAngleY", "PARAM_ANGLE_Y"], -focusY);
+        setParameterAliases(["AngleZ", "ParamAngleZ", "PARAM_ANGLE_Z"], visual.rotation * 10);
+        setParameterAliases(["EyeLOpen", "ParamEyeLOpen", "PARAM_EYE_L_OPEN"], 1 - blink);
+        setParameterAliases(["EyeROpen", "ParamEyeROpen", "PARAM_EYE_R_OPEN"], 1 - blink);
+        setParameterAliases(["EyeBallX", "ParamEyeBallX", "PARAM_EYE_BALL_X"], focusX * 0.7);
+        setParameterAliases(["EyeBallY", "ParamEyeBallY", "PARAM_EYE_BALL_Y"], -focusY * 0.7);
+        setParameterAliases(["MouthOpenY", "ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y"], mouthOpen);
+        setParameterAliases(["BodyAngleX", "ParamBodyAngleX", "PARAM_BODY_ANGLE_X"], focusX * 0.45);
+        setParameterAliases(["BodyAngleY", "ParamBodyAngleY", "PARAM_BODY_ANGLE_Y"], -focusY * 0.35);
+        setParameterAliases(["BodyAngleZ", "ParamBodyAngleZ", "PARAM_BODY_ANGLE_Z"], visual.rotation * 10);
+        setParameterAliases(["Breath", "ParamBreath", "PARAM_BREATH"], Math.sin(phase * 1.8));
+        setParameterAliases(["BustY", "ParamBustY", "PARAM_BUST_Y"], bodyBreath * 0.5 + motionPulse * 0.2);
+        setParameterAliases(["HairFront", "ParamHairFront", "PARAM_HAIR_FRONT"], leftTwinTail.rotation * 10);
+        setParameterAliases(["HairSide", "ParamHairSide", "PARAM_HAIR_SIDE"], rightTwinTail.rotation * 10);
+        setParameterAliases(["HairBack", "ParamHairBack", "PARAM_HAIR_BACK"], (leftTwinTail.rotation - rightTwinTail.rotation) * 6);
+        setParameterAliases(["Ribbon", "ParamRibbon"], tie.rotation * 12);
+        setParameterAliases(["Skirt", "ParamSkirt"], skirt.rotation * 12 + motionPulse * 0.2);
+        redrawFaceFx();
+        if (!motionActive && motion !== "Idle") model._mikuMotion = "Idle";
+    };
+    model._mikuTick();
+    app.ticker.add(model._mikuTick);
+    return model;
+}
+
 async function loadModelList() {
     try {
         var r = await fetch("/api/model/2d/list");
@@ -489,11 +1149,20 @@ async function loadModelList() {
         sel.innerHTML = "";
         if (j.success && j.data && j.data.length) {
             models2D = j.data;
-            models2D.forEach(function(n) { sel.innerHTML += "<option value=\""+n+"\">"+n+"</option>"; });
+            appendModelOptions(sel);
             sel.value = models2D[0];
             await switchModel(models2D[0]);
-        } else { sel.innerHTML = "<option value=\"\">No models</option>"; log("No models"); }
-    } catch(e) { log("Error: "+e.message); }
+        } else { sel.innerHTML = "<option value=\"\">暂无可用角色</option>"; log("暂无可用角色"); }
+    } catch(e) { log("角色列表加载失败: "+e.message); }
+}
+
+function appendModelOptions(select) {
+    models2D.forEach(function(name) {
+        var option = document.createElement("option");
+        option.value = name;
+        option.textContent = getModelDisplayName(name);
+        select.appendChild(option);
+    });
 }
 
 async function reloadModels(selectName) {
@@ -504,32 +1173,54 @@ async function reloadModels(selectName) {
         sel.innerHTML = "";
         if (j.success && j.data && j.data.length) {
             models2D = j.data;
-            models2D.forEach(function(n) { sel.innerHTML += "<option value=\""+n+"\">"+n+"</option>"; });
+            appendModelOptions(sel);
             var target = selectName && models2D.indexOf(selectName) >= 0 ? selectName : models2D[0];
             sel.value = target;
             await switchModel(target);
-        } else { sel.innerHTML = "<option value=\"\">No models</option>"; log("No models"); }
-    } catch(e) { log("Error: "+e.message); }
+        } else { sel.innerHTML = "<option value=\"\">暂无可用角色</option>"; log("暂无可用角色"); }
+    } catch(e) { log("角色列表加载失败: "+e.message); }
 }
 
+/*
+ * The built-in Miku is a project-authored cutout rig. It uses the same stage
+ * contract as Cubism models, while keeping the existing Cubism path unchanged
+ * for uploaded and bundled Live2D models.
+ */
 async function switchModel(name) {
     if (!name) return;
-    log("Loading "+name+"...");
-    if (currentModel) { try { app.stage.removeChild(currentModel); currentModel.destroy(); } catch(e) {} currentModel = null; }
+    log("正在加载角色...");
+    isResizing = false;
+    var resizeUi = document.getElementById("model-resize-ui");
+    if (resizeUi) resizeUi.classList.remove("is-resizing");
+    document.body.classList.add("model-loading");
+    var stageLegend = document.getElementById("stage-legend");
+    if (stageLegend) stageLegend.classList.add("is-loading");
+    if (currentModel) {
+        try {
+            app.stage.removeChild(currentModel);
+            if (currentModel._mikuTick) {
+                app.ticker.remove(currentModel._mikuTick);
+                currentModel.destroy({ children: true });
+            } else {
+                currentModel.destroy();
+            }
+        } catch(e) {}
+        currentModel = null;
+    }
+    updateModelResizeUi();
     currentModelName = name;
+    updateStageModelLabel();
 
     var url = "/live2d-models/" + name + "/" + name + ".model3.json";
 
     try {
-        currentModel = await PIXI.live2d.Live2DModel.from(url, { autoInteract: true });
-        var modelScales = {
-            "haru_ja": 0.15,
-            "hiyori_en": 0.15,
-            "aidang_2": 0.10,
-            "biaoqiang_3": 0.10
-        };
-        currentModel.scale.set(modelScales[name] || 0.15);
-        currentModel.anchor.set(0.5, 0.5);
+        currentModel = name === "hatsune_miku"
+            ? await createHatsuneMikuModel()
+            : await PIXI.live2d.Live2DModel.from(url, { autoInteract: true });
+        modelScaleFactor = readModelScaleFactor(name);
+        currentModel.scale.set(getModelBaseScale(name) * modelScaleFactor);
+        updateModelScaleControls();
+        if (currentModel.anchor) currentModel.anchor.set(0.5, 0.5);
         currentModel.x = window.innerWidth / 2;
         currentModel.y = (window.innerHeight - 80) / 2;
         currentModel.interactive = true;
@@ -552,7 +1243,23 @@ async function switchModel(name) {
         currentModel.on("pointerupoutside", function(e) { onDragEnd(e); });
 
         app.stage.addChild(currentModel);
-        log(name + " ready!");
+        document.body.classList.add("model-ready");
+        document.body.classList.remove("model-loading");
+        if (stageLegend) stageLegend.classList.remove("is-loading");
+        updateStageModelLabel();
+        log("角色已就绪");
+        playUiAnimation(document.getElementById("live2d-canvas"), [
+            { opacity: 0.18 },
+            { opacity: 1 }
+        ], { duration: 620 });
+        playUiAnimation(document.getElementById("stage-legend"), [
+            { opacity: 0.35, transform: "translateY(-4px)" },
+            { opacity: 1, transform: "translateY(0)" }
+        ], { duration: 360 });
+        playUiAnimation(document.getElementById("char-glow"), [
+            { opacity: 0.26, transform: "translate(-50%, -50%) scale(0.88)" },
+            { opacity: 0.84, transform: "translate(-50%, -50%) scale(1)" }
+        ], { duration: 720 });
 
         try {
             var canvasInfo = currentModel.internalModel && currentModel.internalModel._canvasInfo;
@@ -566,7 +1273,6 @@ async function switchModel(name) {
             }
         } catch(e) {}
         updateBubblePosition();
-        // Wait for first render so bounds become available
         setTimeout(function() { updateBubblePosition(); }, 50);
 
         try { currentModel.motion("Idle"); } catch(e) {}
@@ -579,7 +1285,11 @@ async function switchModel(name) {
                 lastExpression = "";
             }
         } catch(_) {}
-    } catch(e) { log("Fail: " + e.message); }
+    } catch(e) {
+        document.body.classList.remove("model-loading");
+        if (stageLegend) stageLegend.classList.remove("is-loading");
+        log("角色加载失败: " + e.message);
+    }
 }
 
 // --- Drag ---
@@ -596,6 +1306,7 @@ function onDragMove(e) {
     currentModel.x = modelStart.x + dx;
     currentModel.y = modelStart.y + dy;
     updateBubblePosition();
+    updateModelResizeUi();
 }
 function onDragEnd(e) {
     if (!isDragging) return;
@@ -624,26 +1335,26 @@ function uploadWithRetry(url, formData, retriesLeft) {
 function onUpload2D(input) {
     var f = input.files[0]; if (!f) return;
     var fd = new FormData(); fd.append("file", f); fd.append("type", "2D");
-    log("Uploading " + f.name + "...");
-    toast("Uploading: " + f.name + " (" + (f.size / 1024 / 1024).toFixed(1) + " MB)...");
+    log("正在上传角色包...");
+    toast("正在上传 " + f.name + "（" + (f.size / 1024 / 1024).toFixed(1) + " MB）");
     uploadWithRetry("/api/model/upload", fd, 2).then(function(j) {
         if (j.success) {
             var name = j.data.fileName;
-            toast("Uploaded: " + name);
-            log("Upload OK: " + name);
+            toast("角色上传成功: " + name);
+            log("角色上传完成: " + name);
             return reloadModels(name);
         } else {
             var msg = j.message || "Unknown error";
-            log("Upload failed: " + msg);
-            toast("Upload failed: " + msg);
+            log("角色上传失败: " + msg);
+            toast("角色上传失败: " + msg);
         }
     }).catch(function(e) {
         if (e.name === "AbortError") {
-            log("Upload timeout - file too large?");
-            toast("Upload timeout - file too large?");
+            log("上传超时，请检查文件大小");
+            toast("上传超时，请检查文件大小");
         } else {
-            log("Upload error: " + (e.message || "Network failure"));
-            toast("Upload error: " + (e.message || "Network failure"));
+            log("上传失败: " + (e.message || "网络不可用"));
+            toast("上传失败: " + (e.message || "网络不可用"));
         }
     });
     input.value = "";
@@ -661,10 +1372,28 @@ function getModelName() {
     var nameMap = {
         "haru_ja": "Haru",
         "hiyori_en": "Hiyori",
-        "aidang_2": "小爱",
-        "biaoqiang_3": "小标"
+        "hatsune_miku": "初音未来"
     };
     return nameMap[currentModelName] || currentModelName || "看板娘";
+}
+
+function getModelDisplayName(name) {
+    var nameMap = {
+        "haru_ja": "Haru",
+        "hiyori_en": "Hiyori",
+        "hatsune_miku": "初音未来"
+    };
+    return nameMap[name] || name;
+}
+
+function updateStageModelLabel() {
+    var label = document.getElementById("stage-model-name");
+    if (!label) return;
+    label.textContent = getModelName();
+    playUiAnimation(label, [
+        { opacity: 0.25, transform: "translateY(5px)" },
+        { opacity: 1, transform: "translateY(0)" }
+    ], { duration: 240 });
 }
 
 // --- Chat Window ---
@@ -675,15 +1404,27 @@ function toggleChatWindow() {
     var win = document.getElementById("chat-window");
     var btn = document.getElementById("chat-window-toggle");
     chatWindowOpen = !chatWindowOpen;
+    playUiAnimation(btn, [
+        { transform: "scale(0.92)" },
+        { transform: "scale(1)" }
+    ], { duration: 260 });
     if (chatWindowOpen) {
         win.classList.remove("hidden");
         btn.classList.add("active");
-        btn.textContent = "✕";
+        btn.textContent = "CLOSE";
+        btn.title = "关闭对话";
+        btn.setAttribute("aria-label", "关闭对话");
         scrollChatToBottom();
+        setTimeout(function() {
+            var input = document.getElementById("chat-win-input-text");
+            if (input) input.focus();
+        }, 240);
     } else {
         win.classList.add("hidden");
         btn.classList.remove("active");
-        btn.textContent = "💬";
+        btn.textContent = "CHAT";
+        btn.title = "打开对话";
+        btn.setAttribute("aria-label", "打开对话");
     }
 }
 
@@ -692,22 +1433,10 @@ function scrollChatToBottom() {
     setTimeout(function() { el.scrollTop = el.scrollHeight; }, 50);
 }
 
-function addChatMessage(role, text, extra) {
+function addChatMessage(role, text) {
     var el = document.createElement("div");
     el.className = "msg " + role;
     if (text) el.textContent = text;
-    if (extra) {
-        if (typeof extra === "string") {
-            var img = document.createElement("img");
-            img.src = extra;
-            img.onload = function() { scrollChatToBottom(); };
-            img.onerror = function() { img.remove(); };
-            el.appendChild(document.createElement("br"));
-            el.appendChild(img);
-        } else {
-            el.appendChild(extra);
-        }
-    }
     document.getElementById("chat-messages").appendChild(el);
     scrollChatToBottom();
     return el;
@@ -726,133 +1455,31 @@ function clearChatHistory() {
     chatHistory = [];
 }
 
-// --- Image Upload for Chat ---
-function onChatImageUpload(input) {
-    var f = input.files[0];
-    if (!f) return;
-    input.value = "";
-    handleChatImage(f);
-}
-
-async function handleChatImage(file) {
-    var reader = new FileReader();
-    reader.onload = async function(e) {
-        // 显示用户发送的图片
-        var userImg = document.createElement("img");
-        userImg.src = e.target.result;
-        userImg.className = "msg-user-img";
-        addChatMessage("user", "", userImg);
-
-        // 在bubble上也显示
-        showBubble("正在识别图片...");
-
-        var thinkEl = addThinkingMessage();
-
-        try {
-            var formData = new FormData();
-            formData.append("image", file);
-            formData.append("question", "");
-
-            var resp = await fetch("/api/live2d/chat/1/recognize", {
-                method: "POST",
-                body: formData
-            });
-            var json = await resp.json();
-            removeElement(thinkEl);
-
-            if (json.success && json.data && json.data.reply) {
-                addChatMessage("ai", json.data.reply);
-                showBubble(json.data.reply);
-                chatHistory.push({role: "user", content: "[发送了一张图片]"});
-                chatHistory.push({role: "assistant", content: json.data.reply});
-            } else {
-                var errMsg = json.message || "识别失败";
-                addChatMessage("ai", "图片识别失败: " + errMsg);
-                showBubble("图片识别失败: " + errMsg);
-            }
-        } catch(err) {
-            removeElement(thinkEl);
-            addChatMessage("ai", "图片识别出错: " + err.message);
-            showBubble("图片识别出错");
-        }
-
-        if (currentModel) try { currentModel.motion("Tap"); } catch(e) {}
-        lastInteraction = Date.now();
-        startIdle();
-    };
-    reader.readAsDataURL(file);
-}
-
-// --- Image Generation ---
-async function handleImageGeneration(prompt) {
-    showBubble("正在生成图片，请稍候...");
-    var thinkEl = addChatMessage("ai", "正在生成图片: " + prompt + "...");
-
-    try {
-        var resp = await fetch("/api/live2d/chat/1/generate", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({prompt: prompt})
-        });
-        var json = await resp.json();
-        removeElement(thinkEl);
-
-        if (json.success && json.data && json.data.imageUrl) {
-            var genImg = document.createElement("img");
-            genImg.src = json.data.imageUrl;
-            genImg.className = "msg-gen-img";
-            genImg.onclick = function() { window.open(this.src, "_blank"); };
-            addChatMessage("ai", json.data.reply || "图片已生成~", genImg);
-            showBubble("图片已生成~");
-            chatHistory.push({role: "user", content: "画图: " + prompt});
-            chatHistory.push({role: "assistant", content: "[生成了一张图片]"});
-        } else {
-            var errMsg = json.message || "生成失败";
-            addChatMessage("ai", "图片生成失败: " + errMsg);
-            showBubble("图片生成失败: " + errMsg);
-        }
-    } catch(err) {
-        removeElement(thinkEl);
-        addChatMessage("ai", "图片生成出错: " + err.message);
-        showBubble("图片生成出错");
-    }
-
-    if (currentModel) try { currentModel.motion("Tap"); } catch(e) {}
-    lastInteraction = Date.now();
-    startIdle();
-}
-
-function isImageGenCommand(text) {
-    return text.startsWith("画图") || text.startsWith("生图") || text.startsWith("生成图片");
-}
-
-function extractImagePrompt(text) {
-    return text.replace(/^(画图|生图|生成图片)[:：,，\s]*/, "").trim();
-}
-
 // --- Chat Window Send ---
 async function sendFromChatWindow() {
+    if (isAiThinking) return;
     var input = document.getElementById("chat-win-input-text");
     var m = input.value.trim();
     if (!m) return;
     input.value = "";
 
-    addDanmaku("user", m);
-    addChatMessage("user", m);
+    isAiThinking = true;
+    setChatBusy(true);
+    showBubble("思考中...");
+    try {
+        addDanmaku("user", m);
+        addChatMessage("user", m);
 
-    if (isImageGenCommand(m)) {
-        var prompt = extractImagePrompt(m);
-        if (!prompt) {
-            addChatMessage("ai", "请输入图片描述，例如：画图 一只可爱的猫咪");
-            return;
-        }
-        await handleImageGeneration(prompt);
-    } else {
         var reply = await doAiChat(m);
         if (reply) {
             addDanmaku("ai", reply);
             addChatMessage("ai", reply);
         }
+    } finally {
+        isAiThinking = false;
+        setChatBusy(false);
+        lastInteraction = Date.now();
+        startIdle();
     }
 }
 
@@ -866,17 +1493,19 @@ async function doAiChat(m) {
             body: JSON.stringify({message: m, history: chatHistory.slice(-20)})
         });
         var json = await resp.json();
-        if (json.success && json.data && json.data.reply &&
-            json.data.reply.indexOf("not configured") === -1 &&
-            json.data.reply.indexOf("Chat not") === -1) {
+        if (json.success && json.data && json.data.reply) {
             reply = json.data.reply;
             if (json.data.motion && currentModel) try { currentModel.motion(json.data.motion); } catch(e) {}
+        } else {
+            reply = json.message || "Agent 服务未连接，请检查模型 API 配置。";
         }
-    } catch(e) {}
+    } catch(e) {
+        reply = "Agent 服务连接失败，请检查模型 API 配置。";
+    }
 
     removeElement(thinkEl);
 
-    if (!reply) reply = smartReply(m);
+    if (!reply) reply = "Agent 服务未返回有效内容，请稍后重试。";
 
     chatHistory.push({role: "user", content: m});
     chatHistory.push({role: "assistant", content: reply});
@@ -1051,32 +1680,17 @@ function smartReply(msg) {
 }
 
 async function sendChat() {
+    if (isAiThinking) return;
     var m = document.getElementById("chat-input").value.trim(); if (!m) return;
-    document.getElementById("chat-input").value = ""; document.getElementById("chat-send").disabled = true;
+    document.getElementById("chat-input").value = "";
     isAiThinking = true;
+    setChatBusy(true);
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     showBubble("思考中...");
     if (currentModel) try { currentModel.motion("Tap"); } catch(e) {}
 
     // 在聊天窗口中也显示用户消息
     addChatMessage("user", m);
-
-    // 图片生成命令
-    if (isImageGenCommand(m)) {
-        var prompt = extractImagePrompt(m);
-        isAiThinking = false;
-        document.getElementById("chat-send").disabled = false;
-        if (!prompt) {
-            addChatMessage("ai", "请输入图片描述，例如：画图 一只可爱的猫咪");
-            showBubble("请输入图片描述");
-            startIdle();
-            return;
-        }
-        await handleImageGeneration(prompt);
-        gainExp(10);
-        document.getElementById("chat-send").disabled = false;
-        return;
-    }
 
     var reply = null;
     try {
@@ -1085,16 +1699,18 @@ async function sendChat() {
             body: JSON.stringify({message: m, history: chatHistory.slice(-20)})
         });
         var json = await resp.json();
-        if (json.success && json.data && json.data.reply &&
-            json.data.reply.indexOf("not configured") === -1 &&
-            json.data.reply.indexOf("Chat not") === -1) {
+        if (json.success && json.data && json.data.reply) {
             reply = json.data.reply;
             if (json.data.motion) try { currentModel.motion(json.data.motion); } catch(e) {}
+        } else {
+            reply = json.message || "Agent 服务未连接，请检查模型 API 配置。";
         }
-    } catch(e) {}
+    } catch(e) {
+        reply = "Agent 服务连接失败，请检查模型 API 配置。";
+    }
 
     isAiThinking = false;
-    if (!reply) reply = smartReply(m);
+    if (!reply) reply = "Agent 服务未返回有效内容，请稍后重试。";
     addDanmaku("ai", reply);
     addChatMessage("ai", reply);
 
@@ -1107,14 +1723,14 @@ async function sendChat() {
     // Chat increases affection and EXP
     var affectionGain = Math.max(1, Math.floor(m.length / 5));
     affection += affectionGain;
-    showFloatText("+" + affectionGain + " ♥", "#ff6090");
+    showFloatText("羁绊 +" + affectionGain, "var(--ds-accent-strong)");
     saveAffection();
 
     var expGain = 3 + Math.floor(m.length / 10);
     gainExp(expGain);
 
     startIdle();
-    document.getElementById("chat-send").disabled = false;
+    setChatBusy(false);
 }
 
 document.addEventListener("DOMContentLoaded", init);

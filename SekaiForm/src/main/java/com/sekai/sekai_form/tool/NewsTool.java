@@ -13,7 +13,7 @@ import java.net.http.HttpResponse;
 public class NewsTool implements Tool {
     private static final String API_URL = "https://uapis.cn/api/v1/misc/hotboard";
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final HttpClient httpClient = HttpClient.newHttpClient();
+    private static HttpClient httpClient() { return HttpClient.newHttpClient(); }
 
     @Override public String name() { return "get_news"; }
     @Override public String description() {
@@ -47,7 +47,7 @@ public class NewsTool implements Tool {
         try {
             String url = API_URL + "?type=" + type + "&limit=" + count;
             HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = httpClient().send(req, HttpResponse.BodyHandlers.ofString());
             JsonNode json = mapper.readTree(resp.body());
             JsonNode list = json.has("list") ? json.get("list") : json.has("data") && json.get("data").has("list") ? json.get("data").get("list") : null;
             if (list == null || list.isEmpty()) return label + "\u70ed\u641c\u6682\u65e0\u6570\u636e";

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live2D 看板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#1a1a2e}
+canvas{display:block;position:fixed;top:0;left:0}
+#top{position:fixed;top:0;left:0;right:0;padding:10px 16px;display:flex;align-items:center;gap:8px;z-index:100;pointer-events:none;flex-wrap:wrap;row-gap:6px;background:linear-gradient(180deg,rgba(10,8,25,0.85) 0%,rgba(10,8,25,0.4) 80%,rgba(10,8,25,0) 100%);backdrop-filter:blur(6px)}
+#top>*{pointer-events:auto}
+.nav-tab{display:inline-flex;align-items:center;padding:8px 18px;border-radius:22px;font-size:0.8em;font-weight:600;text-decoration:none;transition:all 0.25s;white-space:nowrap;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#888}
+.nav-tab.active{background:rgba(100,200,180,0.18);border-color:rgba(100,200,180,0.4);color:#80d0b8}
+.nav-tab:hover{color:#a0e8d0;border-color:rgba(100,200,180,0.3)}
+.top-sep{width:1px;height:24px;background:rgba(255,255,255,0.1);margin:0 4px;flex-shrink:0}
+.l2d-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:22px;border:1px solid rgba(100,200,180,0.25);font-size:0.8em;font-weight:600;cursor:pointer;transition:all 0.25s;white-space:nowrap;background:rgba(100,200,180,0.12);color:#80d0b8}
+.l2d-btn:hover{background:rgba(100,200,180,0.25);border-color:rgba(100,200,180,0.45);color:#a0e8d0}
+.l2d-btn.danger{background:rgba(220,80,80,0.12);border-color:rgba(220,80,80,0.25);color:#e08888}
+.l2d-btn.danger:hover{background:rgba(220,80,80,0.25);border-color:rgba(220,80,80,0.5);color:#ffaaaa}
+#model-select{background:rgba(25,20,45,0.75);border:1px solid rgba(255,255,255,0.12);color:#c8b8e0;font-size:0.78em;padding:8px 14px;border-radius:22px;cursor:pointer;outline:none;min-width:160px;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:28px}
+#status-text{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);font-size:0.75em;color:rgba(255,255,255,0.5);z-index:5;pointer-events:none}
+#toast-area{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:200;pointer-events:none}
+.toast-msg{padding:8px 22px;border-radius:20px;font-weight:600;color:#fff;font-size:0.78em;animation:fadeIO 2.2s ease forwards;background:rgba(15,15,30,0.92);backdrop-filter:blur(10px);border:1px solid rgba(100,200,180,0.3);margin-bottom:6px;text-align:center}
+@keyframes fadeIO{0%{opacity:0;transform:translateY(8px)}15%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
+/* ===== ???????? ===== */
+#danmaku-container{position:fixed;top:8%;left:0;right:0;bottom:35%;z-index:6;pointer-events:none;display:flex;flex-direction:column-reverse;align-items:center;gap:8px;padding:10px 16px;overflow:hidden}
+.danmaku-msg{max-width:min(420px,75vw);padding:12px 18px;border-radius:18px;font-size:0.88em;line-height:1.5;word-break:break-word;animation:danmakuIn 0.4s ease-out forwards;pointer-events:auto;box-shadow:0 4px 16px rgba(0,0,0,0.3)}
+.danmaku-msg.user{align-self:flex-end;background:linear-gradient(135deg,#44ccaa,#3ab894);color:#fff;border-bottom-right-radius:6px;animation-name:danmakuInRight}
+.danmaku-msg.ai{align-self:flex-start;background:rgba(30,25,55,0.92);backdrop-filter:blur(12px);color:#e0d8f0;border:1px solid rgba(100,200,180,0.25);border-bottom-left-radius:6px;animation-name:danmakuInLeft}
+.danmaku-msg.fading{animation:danmakuOut 0.5s ease-in forwards}
+@keyframes danmakuInRight{0%{opacity:0;transform:translateX(40px) scale(0.9)}100%{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes danmakuInLeft{0%{opacity:0;transform:translateX(-40px) scale(0.9)}100%{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes danmakuOut{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(0.85) translateY(-10px)}}
+/* ???bubble?????? */
+#bubble{position:fixed;top:15%;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:20px;font-size:0.85em;color:#80d0b8;pointer-events:none;z-index:5;text-align:center;opacity:0;transition:opacity 0.3s;background:rgba(15,10,30,0.85);backdrop-filter:blur(8px);border:1px solid rgba(100,200,180,0.2)}
+#bubble.show{opacity:1}
+#chat-area{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(500px,90vw);z-index:10;padding:12px;display:flex;gap:8px}
+#chat-input{flex:1;padding:10px 16px;border-radius:24px;border:1px solid rgba(255,255,255,0.15);background:rgba(20,15,40,0.85);color:#e0d8f0;font-size:0.9em;outline:none;backdrop-filter:blur(10px)}
+#chat-send{padding:10px 20px;border-radius:24px;border:none;background:linear-gradient(135deg,#44ccaa,#44aacc);color:#fff;font-weight:600;cursor:pointer;font-size:0.85em}
+#chat-img-btn{padding:10px 14px;border-radius:24px;border:1px solid rgba(100,200,180,0.3);background:rgba(100,200,180,0.12);color:#80d0b8;cursor:pointer;font-size:1.1em;line-height:1}
+#chat-img-btn:hover{background:rgba(100,200,180,0.25)}
+/* Chat window panel */
+#chat-window{position:fixed;right:16px;top:50px;bottom:70px;width:460px;z-index:80;display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:rgba(15,10,30,0.92);backdrop-filter:blur(16px);border:1px solid rgba(100,200,180,0.25);transition:transform 0.3s,opacity 0.3s}
+#chat-window.hidden{transform:translateX(480px);opacity:0;pointer-events:none}
+#chat-window-toggle{position:fixed;right:16px;bottom:70px;z-index:81;width:48px;height:48px;border-radius:50%;border:1px solid rgba(100,200,180,0.35);background:rgba(15,10,30,0.88);backdrop-filter:blur(10px);color:#80d0b8;font-size:1.2em;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
+#chat-window-toggle:hover{background:rgba(100,200,180,0.2);color:#a0e8d0}
+#chat-window-toggle.active{right:484px}
+#chat-win-header{padding:14px 18px;border-bottom:1px solid rgba(100,200,180,0.15);display:flex;align-items:center;justify-content:space-between;color:#80d0b8;font-weight:700;font-size:1em;flex-shrink:0}
+#chat-win-header button{background:none;border:none;color:#666;cursor:pointer;font-size:1.1em;padding:2px 8px;border-radius:6px}
+#chat-win-header button:hover{color:#80d0b8;background:rgba(100,200,180,0.15)}
+#chat-messages{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:12px}
+#chat-messages::-webkit-scrollbar{width:4px}
+#chat-messages::-webkit-scrollbar-thumb{background:rgba(100,200,180,0.3);border-radius:2px}
+.msg{max-width:85%;padding:12px 16px;border-radius:16px;font-size:0.95em;line-height:1.5;word-break:break-word;animation:msgIn 0.2s ease}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{align-self:flex-end;background:rgba(100,200,180,0.25);border:1px solid rgba(100,200,180,0.35);color:#e0f0e8;border-bottom-right-radius:4px;font-size:0.95em;max-width:80%}
+.msg.ai{align-self:flex-start;background:rgba(25,20,45,0.85);border:1px solid rgba(255,255,255,0.12);color:#e0d8f0;border-bottom-left-radius:4px;font-size:0.95em;max-width:80%}
+.msg.ai.thinking{color:#888;font-style:italic}
+.msg img{max-width:100%;border-radius:8px;margin-top:6px;cursor:pointer}
+.msg-user-img{max-width:120px;border-radius:8px;margin-top:4px;border:1px solid rgba(100,200,180,0.2)}
+.msg-gen-img{max-width:220px;border-radius:8px;margin-top:6px;border:1px solid rgba(255,200,60,0.3);cursor:pointer}
+#chat-win-input{padding:14px 12px;border-top:1px solid rgba(100,200,180,0.15);display:flex;gap:8px;flex-shrink:0}
+#chat-win-input input{flex:1;padding:10px 18px;border-radius:22px;border:1px solid rgba(255,255,255,0.12);background:rgba(20,15,40,0.8);color:#e0d8f0;font-size:0.92em;outline:none}
+#chat-win-input button{padding:10px 20px;border-radius:22px;border:none;background:linear-gradient(135deg,#44ccaa,#44aacc);color:#fff;font-weight:600;cursor:pointer;font-size:0.9em;white-space:nowrap}
+#chat-win-input button:hover{opacity:0.85}
+#chat-win-input .img-upload{padding:8px 10px;border-radius:20px;border:1px solid rgba(100,200,180,0.25);background:rgba(100,200,180,0.1);color:#80d0b8;cursor:pointer;font-size:1em;line-height:1}
+#chat-win-input .img-upload:hover{background:rgba(100,200,180,0.25)}
+/* Stats panel */
+#stats-panel{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:50;background:rgba(15,10,30,0.88);backdrop-filter:blur(12px);border:1px solid rgba(100,200,180,0.25);border-radius:16px;padding:18px 20px;min-width:200px;color:#d0c8e8;font-size:0.8em;transition:all 0.3s}
+#stats-panel.collapsed{padding:10px 14px;min-width:auto;cursor:pointer;opacity:0.4}
+#stats-panel.collapsed:hover{opacity:0.8}
+#stats-panel.collapsed h3{margin:0;font-size:0.9em}
+#stats-panel.collapsed .stat-row,#stats-panel.collapsed #exp-bar-wrap,#stats-panel.collapsed #exp-text,#stats-panel.collapsed .stat-btn.reset{display:none}
+#stats-toggle{position:absolute;top:4px;right:8px;background:none;border:none;color:#666;cursor:pointer;font-size:1em;padding:2px 6px;border-radius:6px;transition:all 0.2s}
+#stats-toggle:hover{color:#80d0b8;background:rgba(100,200,180,0.15)}
+#stats-panel.collapsed #stats-toggle{right:4px;top:2px}
+#stats-panel h3{margin:0 0 12px;font-size:1em;color:#80d0b8;text-align:center}
+.stat-row{display:flex;justify-content:space-between;align-items:center;margin:4px 0;padding:2px 0}
+.stat-label{color:#999}
+.stat-val{font-weight:700;color:#e0d8f0;min-width:36px;text-align:right}
+.stat-val.hp{color:#ff7777}.stat-val.atk{color:#ffaa44}.stat-val.def{color:#44aaff}
+#exp-bar-wrap{background:rgba(255,255,255,0.08);border-radius:8px;height:14px;margin:8px 0 4px;overflow:hidden}
+#exp-bar-fill{background:linear-gradient(90deg,#44ccaa,#44aacc);height:100%;border-radius:8px;transition:width 0.4s;width:0%}
+#exp-text{text-align:center;font-size:0.7em;color:#888;margin-bottom:8px}
+.stat-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1px solid rgba(100,200,180,0.3);background:rgba(100,200,180,0.1);color:#80d0b8;cursor:pointer;font-size:1em;margin-left:6px;transition:all 0.2s;line-height:1}
+.stat-btn:hover{background:rgba(100,200,180,0.3);color:#a0e8d0}
+.stat-btn:disabled{opacity:0.3;cursor:default}
+.stat-btn.reset{width:auto;height:auto;border-radius:16px;padding:4px 14px;font-size:0.75em;border-color:rgba(220,80,80,0.35);background:rgba(220,80,80,0.1);color:#e08888;margin-top:10px;display:block;text-align:center}
+.stat-btn.reset:hover{background:rgba(220,80,80,0.25);color:#ffaaaa}
+#free-pts{color:#ffcc44;font-weight:700}
+#level-up-flash{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:2em;color:#ffcc44;font-weight:900;pointer-events:none;z-index:300;text-shadow:0 0 20px rgba(255,200,60,0.6);opacity:0;transition:opacity 0.3s}
+#level-up-flash.show{opacity:1;animation:levelUpPop 1.5s ease-out forwards}
+@keyframes levelUpPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.5)}20%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}50%{transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-70%) scale(0.8)}}
+/* Dialog panel */
+#dialog-panel{position:fixed;z-index:150;background:rgba(20,15,40,0.95);backdrop-filter:blur(12px);border:1px solid rgba(100,200,180,0.35);border-radius:14px;padding:8px 0;min-width:140px;box-shadow:0 8px 30px rgba(0,0,0,0.5)}
+.dlg-item{padding:10px 20px;cursor:pointer;font-size:0.85em;color:#d0c8e8;transition:all 0.2s;white-space:nowrap}
+.dlg-item:hover{background:rgba(100,200,180,0.15);color:#a0e8d0}
+/* Float text */
+.float-text{position:fixed;z-index:250;font-weight:900;font-size:1.2em;pointer-events:none;animation:floatUp 1.5s ease-out forwards}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}
+</style>
+</head>
+<body>
+<canvas id="live2d-canvas"></canvas>
+<div id="top">
+    <a href="/" class="nav-tab">3D 模型</a>
+    <a href="/live2d" class="nav-tab active">2D 看板</a>
+    <select id="model-select" onchange="switchModel(this.value)"><option value="">Loading...</option></select>
+    <button type="button" class="l2d-btn" onclick="document.getElementById('file2d').click()">+ 上传2D</button>
+    <button type="button" class="l2d-btn danger" onclick="delete2DModel()">🗑️ 删除</button>
+    <input type="file" id="file2d" accept=".zip" onchange="onUpload2D(this)" style="position:fixed;top:-100px;left:-100px">
+</div>
+<div id="stats-panel" class="collapsed">
+    <button id="stats-toggle" onclick="toggleStatsPanel()" title="折叠/展开">◁</button>
+    <h3>🎁 角色养成</h3>
+    <div class="stat-row"><span class="stat-label">等级</span><span class="stat-val" id="s-level">1</span></div>
+    <div class="stat-row"><span class="stat-label">❤️ HP</span>
+        <span><span class="stat-val hp" id="s-hp">100</span><button class="stat-btn" id="btn-hp" onclick="allocPoint('HP')" title="分配属性点">+</button></span>
+    </div>
+    <div class="stat-row"><span class="stat-label">⚔️ ATK</span>
+        <span><span class="stat-val atk" id="s-atk">20</span><button class="stat-btn" id="btn-atk" onclick="allocPoint('ATK')" title="分配属性点">+</button></span>
+    </div>
+    <div class="stat-row"><span class="stat-label">🛡️ DEF</span>
+        <span><span class="stat-val def" id="s-def">10</span><button class="stat-btn" id="btn-def" onclick="allocPoint('DEF')" title="分配属性点">+</button></span>
+    </div>
+    <div style="margin-top:8px;font-size:0.7em;color:#ffcc44">
+        自由点数: <span id="free-pts">0</span>
+    </div>
+    <div style="font-size:0.7em;color:#ff9999;margin-top:2px">
+        好感度 <span id="aff-val" style="color:#ff9999">0</span> ❤️
+    </div>
+    <div style="margin-top:8px">
+        <div id="exp-bar-wrap"><div id="exp-bar-fill"></div></div>
+        <div id="exp-text">EXP 0 / 100</div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="stat-btn reset" style="flex:1" onclick="gainExp(30)">💀 击杀(+30)</button>
+        <button class="stat-btn reset" style="flex:1" onclick="gainExp(10)">✨ 任务(+10)</button>
+    </div>
+    <button class="stat-btn reset" style="width:100%" onclick="resetCharacter()">🔄 重置 (Lv.1)</button>
+</div>
+<div id="status-text">Initializing...</div>
+<div id="toast-area"></div>
+<div id="danmaku-container"></div>
+<div id="bubble"></div>
+<div id="level-up-flash">LEVEL UP!</div>
+<button type="button" id="chat-window-toggle" onclick="toggleChatWindow()" title="聊天窗口">💬</button>
+<div id="chat-window" class="hidden">
+    <div id="chat-win-header">
+        <span>💬 聊天记录</span>
+        <button onclick="clearChatHistory()" title="清空记录">🗑️</button>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-win-input">
+        <input id="chat-win-input-text" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendFromChatWindow()">
+        <button type="button" class="img-upload" onclick="document.getElementById('chat-img-upload').click()" title="发送图片">🖼️</button>
+        <button type="button" onclick="sendFromChatWindow()">发送</button>
+        <input type="file" id="chat-img-upload" accept="image/*" onchange="onChatImageUpload(this)" style="position:fixed;top:-100px;left:-100px">
+    </div>
+</div>
+<div id="chat-area">
+    <input id="chat-input" placeholder="和看板娘聊天... (Enter发送)" onkeydown="if(event.key==='Enter')sendChat()">
+    <button type="button" id="chat-img-btn" onclick="document.getElementById('chat-img-upload-bottom').click()" title="发送图片">🖼️</button>
+    <input type="file" id="chat-img-upload-bottom" accept="image/*" onchange="onChatImageUpload(this)" style="position:fixed;top:-100px;left:-100px">
+    <button type="button" id="chat-send" onclick="sendChat()">发送</button>
+</div>
+<script src="/js/pixi.min.js"></script>
+<script src="/js/live2dcubismcore.min.js"></script>
+<script src="/js/cubism4.min.js"></script>
+<script src="/js/live2d-app.js?v=8"></script>
+</body>
+</html>

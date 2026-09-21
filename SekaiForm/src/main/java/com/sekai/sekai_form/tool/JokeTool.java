@@ -13,7 +13,7 @@ import java.net.http.HttpResponse;
 public class JokeTool implements Tool {
     private static final String API_URL = "https://uapis.cn/api/v1/misc/joke";
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final HttpClient httpClient = HttpClient.newHttpClient();
+    private static HttpClient httpClient() { return HttpClient.newHttpClient(); }
     
     @Override public String name() { return "tell_joke"; }
     
@@ -44,7 +44,7 @@ public class JokeTool implements Tool {
         try {
             String url = API_URL + "?num=" + count;
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             JsonNode resp = mapper.readTree(response.body());
             
             JsonNode jokes = resp.has("data") ? resp.get("data") : null;

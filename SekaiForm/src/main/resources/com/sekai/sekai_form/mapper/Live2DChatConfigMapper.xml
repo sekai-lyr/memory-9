@@ -24,7 +24,6 @@
     </insert>
     <update id="update">
         UPDATE live2d_chat_config SET api_url=#{apiUrl}, api_key=#{apiKey}, model_name=#{modelName},
-        image_model_name=#{imageModelName}, image_api_url=#{imageApiUrl},
-        system_prompt=#{systemPrompt}, max_tokens=#{maxTokens}, temperature=#{temperature}, enabled=#{enabled} WHERE id=#{id}
+        image_model_name=#{imageModelName}, image_api_url=#{imageApiUrl}, system_prompt=#{systemPrompt}, max_tokens=#{maxTokens}, temperature=#{temperature}, enabled=#{enabled} WHERE id=#{id}
     </update>
 </mapper>

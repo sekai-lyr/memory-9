@@ -1,0 +1,64 @@
+public Result<ChatResponse> chat(Long modelId, String message, List<Map<String, Object>> history) {
+        Live2DChatConfigDO config = chatConfigMapper.getByModelId(modelId);
+        if (config == null || config.getApiUrl() == null || config.getApiUrl().isBlank()) {
+            return Result.fail("AI?????????????API");
+        }
+        try {
+            String sysPrompt = config.getSystemPrompt();
+            if (sysPrompt == null || sysPrompt.length() < 50 || isGarbled(sysPrompt)) {
+                sysPrompt = getDefaultSystemPrompt();
+            }
+            // Add time context
+            var h = java.time.LocalTime.now().getHour();
+            sysPrompt += "\n[Time: " + h + ":00]";
+            
+            // Build messages array
+            ArrayNode messages = objectMapper.createArrayNode();
+            messages.add(chatMessage("system", sysPrompt));
+            
+            // Emotion hint
+            String emotionHint = detectEmotion(message);
+            if (!emotionHint.isEmpty()) {
+                messages.add(chatMessage("system", emotionHint));
+            }
+            
+            // History
+            if (history != null) {
+                int start = Math.max(0, history.size() - 10);
+                for (int i = start; i < history.size(); i++) {
+                    Map<String, Object> hm = history.get(i);
+                    String role = hm.get("role") != null ? hm.get("role").toString() : "user";
+                    String cnt = hm.get("content") != null ? hm.get("content").toString() : "";
+                    if (!cnt.isBlank()) messages.add(chatMessage(role, cnt));
+                }
+            }
+            
+            messages.add(chatMessage("user", message));
+            
+            // === 7.24.pm Function Calling Loop ===
+            String model = config.getModelName() != null ? config.getModelName() : "deepseek-chat";
+            String apiUrl = config.getApiUrl();
+            String apiKey = config.getApiKey();
+            int maxTokens = config.getMaxTokens() != null ? config.getMaxTokens() : 1024;
+            double temp = config.getTemperature() != null ? config.getTemperature() : 0.85;
+            
+            String finalReply = "";
+            int maxIterations = 5;
+            
+            for (int iter = 0; iter < maxIterations; iter++) {
+                ObjectNode body = objectMapper.createObjectNode();
+                body.put("model", model);
+                body.put("temperature", temp);
+                body.put("max_tokens", maxTokens);
+                body.set("messages", messages);
+                
+                // Include tool definitions
+                if (!toolRegistry.isEmpty()) {
+                    body.set("tools", toolRegistry.getToolDefinitions());
+                }
+                
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.setBearerAuth(apiKey);
+                
+               
