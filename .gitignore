@@ -1,31 +1,19 @@
-# Environment
+# Local secrets and environment files
 .env
-.env.local
+.env.*
+!.env.example
+__pycache__/
 
-# Database files
-data/*.db
-data/*.mv.db
-data/*.trace.db
-*.db
-*.sqlite
+# Local runtime data and generated media
+data/
+SekaiForm/data/
+*.mv.db
+*.trace.db
+*.mv.db.*
+*.trace.db.*
 
-# IDE
+# IDE and build output
 .idea/
-*.iml
-.vscode/
-.settings/
-.project
-.classpath
-
-# Maven build
 target/
+*.iml
 *.class
-*.jar
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
